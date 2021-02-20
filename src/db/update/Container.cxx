@@ -17,6 +17,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "config.h" /* must be first for large file support */
 #include "Walk.hxx"
 #include "UpdateDomain.hxx"
 #include "song/DetachedSong.hxx"
@@ -29,6 +30,44 @@
 #include "fs/AllocatedPath.hxx"
 #include "storage/FileInfo.hxx"
 #include "Log.hxx"
+#include "util/AllocatedString.hxx"
+
+Directory *
+UpdateWalk::MakeDirectoryIfModified(Directory &parent, const char *name,
+				    const StorageFileInfo &info)
+{
+	Directory *directory = parent.FindChild(name);
+
+	// directory exists already
+	if (directory != nullptr) {
+		if (directory->IsMount())
+			return nullptr;
+
+		if (directory->mtime == info.mtime && !walk_discard) {
+			/* not modified */
+			return nullptr;
+		}
+
+		editor.DeleteDirectory(directory);
+		modified = true;
+	}
+
+	directory = parent.MakeChild(name);
+	directory->mtime = info.mtime;
+	return directory;
+}
+
+static bool
+SupportsContainerSuffix(const DecoderPlugin &plugin, const char *suffix)
+{
+	if (plugin.container_scan != nullptr)
+		if (strcmp(plugin.name, "dsdiff") == 0 && plugin.SupportsSuffix(suffix))
+			if (plugin.container_scan(Path(nullptr)).empty())
+				return false;
+
+	return plugin.container_scan != nullptr &&
+		plugin.SupportsSuffix(suffix);
+}
 
 bool
 UpdateWalk::UpdateContainerFile(Directory &directory,
