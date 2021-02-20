@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Music Player Daemon Project
+ * Copyright 2020-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -24,6 +24,7 @@
 #include "mixer/MixerList.hxx"
 #include "thread/Cond.hxx"
 #include "thread/Mutex.hxx"
+#include "thread/Name.hxx"
 #include "thread/Thread.hxx"
 #include "util/AllocatedString.hxx"
 #include "util/Domain.hxx"
@@ -193,7 +194,7 @@ private:
 	bool is_exclusive;
 	bool enumerate_devices;
 	std::string device_config;
-	std::vector<std::pair<unsigned int, AllocatedString<char>>> device_desc;
+	std::vector<std::pair<unsigned int, AllocatedString>> device_desc;
 	std::shared_ptr<WinEvent> event;
 	std::optional<COM> com;
 	ComPtr<IMMDeviceEnumerator> enumerator;
@@ -231,6 +232,7 @@ IAudioClient *wasapi_output_get_client(WasapiOutput &output) noexcept {
 }
 
 void WasapiOutputThread::Work() noexcept {
+	SetThreadName("Wasapi Output Worker");
 	FormatDebug(wasapi_output_domain, "Working thread started");
 	try {
 		com.emplace();

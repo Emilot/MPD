@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -22,7 +22,7 @@
 
 #include "Cancellable.hxx"
 #include "event/SocketEvent.hxx"
-#include "event/TimerEvent.hxx"
+#include "event/CoarseTimerEvent.hxx"
 #include "event/DeferEvent.hxx"
 #include "util/Compiler.h"
 
@@ -95,7 +95,7 @@ class NfsConnection {
 
 	SocketEvent socket_event;
 	DeferEvent defer_new_lease;
-	TimerEvent mount_timeout_event;
+	CoarseTimerEvent mount_timeout_event;
 
 	std::string server, export_name;
 

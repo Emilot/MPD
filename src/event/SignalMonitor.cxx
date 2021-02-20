@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -57,7 +57,7 @@ public:
 	explicit SignalMonitor(EventLoop &_loop)
 		:event(_loop, BIND_THIS_METHOD(OnSocketReady)) {
 #ifndef USE_SIGNALFD
-		event.Open(SocketDescriptor(fd.Get()));
+		event.Open(fd.GetSocket());
 		event.ScheduleRead();
 #endif
 	}

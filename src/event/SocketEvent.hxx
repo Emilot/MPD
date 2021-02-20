@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,7 +25,6 @@
 #include "util/BindMethod.hxx"
 #include "util/IntrusiveList.hxx"
 
-#include <cassert>
 #include <cstddef>
 #include <type_traits>
 
@@ -44,7 +43,8 @@ class EventLoop;
  * thread that runs the #EventLoop, except where explicitly documented
  * as thread-safe.
  */
-class SocketEvent final : IntrusiveListHook, public EventPollBackendEvents {
+class SocketEvent final : IntrusiveListHook, public EventPollBackendEvents
+{
 	friend class EventLoop;
 	friend class IntrusiveList<SocketEvent>;
 
@@ -75,7 +75,7 @@ public:
 	 */
 	static constexpr unsigned IMPLICIT_FLAGS = ERROR|HANGUP;
 
-	typedef std::make_signed<size_t>::type ssize_t;
+	using ssize_t = std::make_signed<size_t>::type;
 
 	SocketEvent(EventLoop &_loop, Callback _callback,
 		    SocketDescriptor _fd=SocketDescriptor::Undefined()) noexcept
@@ -99,8 +99,6 @@ public:
 	}
 
 	SocketDescriptor GetSocket() const noexcept {
-		assert(IsDefined());
-
 		return fd;
 	}
 
@@ -109,7 +107,7 @@ public:
 		return std::exchange(fd, SocketDescriptor::Undefined());
 	}
 
-	void Open(SocketDescriptor _fd) noexcept;
+	void Open(SocketDescriptor fd) noexcept;
 
 	/**
 	 * Close the socket (and cancel all scheduled events).
@@ -164,10 +162,10 @@ public:
 
 	/**
 	 * Schedule only the #IMPLICIT_FLAGS without #READ and #WRITE.
-	 * This is not possible with Schedule(), and no other
-	 * ScheduleX()/CancelX() method may be called on this object.
 	 */
-	void ScheduleImplicit() noexcept;
+	void ScheduleImplicit() noexcept {
+		Schedule(IMPLICIT_FLAGS);
+	}
 
 	bool IsReadPending() const noexcept {
 		return GetScheduledFlags() & READ;
@@ -177,7 +175,10 @@ public:
 		return GetScheduledFlags() & WRITE;
 	}
 
-public:
+private:
+	/**
+	 * Dispatch the events that were passed to SetReadyFlags().
+	 */
 	void Dispatch() noexcept;
 };
 

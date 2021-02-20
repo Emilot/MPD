@@ -44,7 +44,7 @@ namespace ODBus {
 
 template<typename T>
 struct BasicValue {
-	typedef TypeTraits<T> Traits;
+	using Traits = TypeTraits<T>;
 	const T &value;
 
 	explicit constexpr BasicValue(const T &_value) noexcept
@@ -110,7 +110,7 @@ static WrapFixedArray<T> FixedArray(const T *_data,
 
 template<typename... T>
 struct WrapStruct {
-	using Traits = StructTypeTraits<T...>;
+	using Traits = StructTypeTraits<typename T::Traits...>;
 
 	std::tuple<const T&...> values;
 

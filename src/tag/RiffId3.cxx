@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,26 +17,15 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "Riff.hxx"
+#include "RiffId3.hxx"
+#include "RiffFormat.hxx"
 #include "input/InputStream.hxx"
 #include "util/ByteOrder.hxx"
 
-#include <cstdint>
 #include <limits>
 #include <stdexcept>
 
 #include <string.h>
-
-struct riff_header {
-	char id[4];
-	uint32_t size;
-	char format[4];
-};
-
-struct riff_chunk_header {
-	char id[4];
-	uint32_t size;
-};
 
 size_t
 riff_seek_id3(InputStream &is, std::unique_lock<Mutex> &lock)
@@ -45,7 +34,7 @@ riff_seek_id3(InputStream &is, std::unique_lock<Mutex> &lock)
 
 	is.Rewind(lock);
 
-	riff_header header;
+	RiffFileHeader header;
 	is.ReadFull(lock, &header, sizeof(header));
 	if (memcmp(header.id, "RIFF", 4) != 0 ||
 	    (is.KnownSize() && FromLE32(header.size) > is.GetSize()))
@@ -54,7 +43,7 @@ riff_seek_id3(InputStream &is, std::unique_lock<Mutex> &lock)
 	while (true) {
 		/* read the chunk header */
 
-		riff_chunk_header chunk;
+		RiffChunkHeader chunk;
 		is.ReadFull(lock, &chunk, sizeof(chunk));
 
 		size_t size = FromLE32(chunk.size);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,7 +31,7 @@ FullyBufferedSocket::DirectWrite(const void *data, size_t length) noexcept
 	const auto nbytes = GetSocket().Write((const char *)data, length);
 	if (gcc_unlikely(nbytes < 0)) {
 		const auto code = GetSocketError();
-		if (IsSocketErrorAgain(code))
+		if (IsSocketErrorSendWouldBlock(code))
 			return 0;
 
 		idle_event.Cancel();
@@ -97,7 +97,7 @@ FullyBufferedSocket::OnSocketReady(unsigned flags) noexcept
 {
 	if (flags & SocketEvent::WRITE) {
 		assert(!output.empty());
-		assert(!idle_event.IsActive());
+		assert(!idle_event.IsPending());
 
 		if (!Flush())
 			return;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,7 +31,7 @@
 #include "lib/curl/Escape.hxx"
 #include "lib/expat/ExpatParser.hxx"
 #include "fs/Traits.hxx"
-#include "event/DeferEvent.hxx"
+#include "event/InjectEvent.hxx"
 #include "thread/Mutex.hxx"
 #include "thread/Cond.hxx"
 #include "time/Parser.hxx"
@@ -84,7 +84,7 @@ CurlStorage::MapToRelativeUTF8(std::string_view uri_utf8) const noexcept
 }
 
 class BlockingHttpRequest : protected CurlResponseHandler {
-	DeferEvent defer_start;
+	InjectEvent defer_start;
 
 	std::exception_ptr postponed_error;
 
@@ -136,7 +136,7 @@ protected:
 	}
 
 private:
-	/* DeferEvent callback */
+	/* InjectEvent callback */
 	void OnDeferredStart() noexcept {
 		assert(!done);
 
@@ -243,6 +243,7 @@ class PropfindOperation : BlockingHttpRequest, CommonExpatParser {
 	enum class State {
 		ROOT,
 		RESPONSE,
+		PROPSTAT,
 		HREF,
 		STATUS,
 		TYPE,
@@ -262,18 +263,19 @@ public:
 		request.SetOption(CURLOPT_MAXREDIRS, 1L);
 
 		request_headers.Append(StringFormat<40>("depth: %u", depth));
+		request_headers.Append("content-type: text/xml");
 
 		request.SetOption(CURLOPT_HTTPHEADER, request_headers.Get());
 
 		request.SetOption(CURLOPT_POSTFIELDS,
 				  "<?xml version=\"1.0\"?>\n"
 				  "<a:propfind xmlns:a=\"DAV:\">"
-				  "<a:prop><a:resourcetype/></a:prop>"
-				  "<a:prop><a:getcontenttype/></a:prop>"
-				  "<a:prop><a:getcontentlength/></a:prop>"
+				  "<a:prop>"
+				  "<a:resourcetype/>"
+				  "<a:getcontenttype/>"
+				  "<a:getcontentlength/>"
+				  "</a:prop>"
 				  "</a:propfind>");
-
-		// TODO: send request body
 	}
 
 	using BlockingHttpRequest::GetEasy;
@@ -321,9 +323,13 @@ private:
 			break;
 
 		case State::RESPONSE:
-			if (strcmp(name, "DAV:|href") == 0)
+			if (strcmp(name, "DAV:|propstat") == 0)
+				state = State::PROPSTAT;
+			else if (strcmp(name, "DAV:|href") == 0)
 				state = State::HREF;
-			else if (strcmp(name, "DAV:|status") == 0)
+			break;
+		case State::PROPSTAT:
+			if (strcmp(name, "DAV:|status") == 0)
 				state = State::STATUS;
 			else if (strcmp(name, "DAV:|resourcetype") == 0)
 				state = State::TYPE;
@@ -353,8 +359,14 @@ private:
 
 		case State::RESPONSE:
 			if (strcmp(name, "DAV:|response") == 0) {
-				FinishResponse();
 				state = State::ROOT;
+			}
+			break;
+
+		case State::PROPSTAT:
+			if (strcmp(name, "DAV:|propstat") == 0) {
+				FinishResponse();
+				state = State::RESPONSE;
 			}
 
 			break;
@@ -366,22 +378,22 @@ private:
 
 		case State::STATUS:
 			if (strcmp(name, "DAV:|status") == 0)
-				state = State::RESPONSE;
+				state = State::PROPSTAT;
 			break;
 
 		case State::TYPE:
 			if (strcmp(name, "DAV:|resourcetype") == 0)
-				state = State::RESPONSE;
+				state = State::PROPSTAT;
 			break;
 
 		case State::MTIME:
 			if (strcmp(name, "DAV:|getlastmodified") == 0)
-				state = State::RESPONSE;
+				state = State::PROPSTAT;
 			break;
 
 		case State::LENGTH:
 			if (strcmp(name, "DAV:|getcontentlength") == 0)
-				state = State::RESPONSE;
+				state = State::PROPSTAT;
 			break;
 		}
 	}
@@ -389,6 +401,7 @@ private:
 	void CharacterData(const XML_Char *s, int len) final {
 		switch (state) {
 		case State::ROOT:
+		case State::PROPSTAT:
 		case State::RESPONSE:
 		case State::TYPE:
 			break;

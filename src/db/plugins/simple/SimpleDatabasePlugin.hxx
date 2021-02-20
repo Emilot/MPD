@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -20,10 +20,10 @@
 #ifndef MPD_SIMPLE_DATABASE_PLUGIN_HXX
 #define MPD_SIMPLE_DATABASE_PLUGIN_HXX
 
+#include "ExportedSong.hxx"
 #include "db/Interface.hxx"
 #include "db/Ptr.hxx"
 #include "fs/AllocatedPath.hxx"
-#include "song/LightSong.hxx"
 #include "util/Manual.hxx"
 #include "util/Compiler.h"
 #include "config.h"
@@ -63,7 +63,7 @@ class SimpleDatabase : public Database {
 	/**
 	 * A buffer for GetSong().
 	 */
-	mutable Manual<LightSong> light_song;
+	mutable Manual<ExportedSong> exported_song;
 
 #ifndef NDEBUG
 	mutable unsigned borrowed_song_count;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -182,6 +182,14 @@ class AudioOutputControl {
 	bool open = false;
 
 	/**
+	 * Is the device currently playing, i.e. is its buffer
+	 * (likely) non-empty?  If not, then it will never be drained.
+	 *
+	 * This field is only valid while the output is open.
+	 */
+	bool playing;
+
+	/**
 	 * Is the device paused?  i.e. the output thread is in the
 	 * ao_pause() loop.
 	 */
@@ -243,6 +251,9 @@ public:
 	mutable Mutex mutex;
 
 	AudioOutputControl(std::unique_ptr<FilteredAudioOutput> _output,
+			   AudioOutputClient &_client) noexcept;
+
+	AudioOutputControl(AudioOutputControl *_outputControl,
 			   AudioOutputClient &_client) noexcept;
 
 	~AudioOutputControl() noexcept;

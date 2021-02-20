@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,13 +17,30 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "TimerEvent.hxx"
-#include "Loop.hxx"
+#ifndef MPD_FFMPEG_DETECT_FILTER_FORMAT_HXX
+#define MPD_FFMPEG_DETECT_FILTER_FORMAT_HXX
 
-void
-TimerEvent::Schedule(Event::Duration d) noexcept
-{
-	Cancel();
+struct AVFilterContext;
+struct AudioFormat;
 
-	loop.AddTimer(*this, d);
-}
+namespace Ffmpeg {
+
+/**
+ * Attempt to detect the output format of the given FFmpeg filter by
+ * sending one frame of silence and checking what format comes back
+ * from the filter.
+ *
+ * This is a kludge because MPD needs to know the output format of a
+ * filter while initializing and cannot cope with format changes in
+ * between.
+ *
+ * This function can throw if the FFmpeg filter fails.
+ */
+AudioFormat
+DetectFilterOutputFormat(const AudioFormat &in_audio_format,
+			 AVFilterContext &buffer_src,
+			 AVFilterContext &buffer_sink);
+
+} // namespace Ffmpeg
+
+#endif

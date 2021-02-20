@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,14 +17,16 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef MPD_EVENT_LOOP_HXX
-#define MPD_EVENT_LOOP_HXX
+#ifndef EVENT_LOOP_HXX
+#define EVENT_LOOP_HXX
 
 #include "Chrono.hxx"
+#include "TimerWheel.hxx"
+#include "TimerList.hxx"
 #include "Backend.hxx"
 #include "SocketEvent.hxx"
 #include "event/Features.h"
-#include "util/Compiler.h"
+#include "time/ClockCache.hxx"
 #include "util/IntrusiveList.hxx"
 
 #ifdef HAVE_THREADED_EVENT_LOOP
@@ -38,7 +40,6 @@
 
 #include <atomic>
 #include <cassert>
-#include <chrono>
 
 #include "io/uring/Features.h"
 #ifdef HAVE_URING
@@ -46,9 +47,8 @@
 namespace Uring { class Queue; class Manager; }
 #endif
 
-class TimerEvent;
-class IdleEvent;
 class DeferEvent;
+class InjectEvent;
 
 /**
  * An event loop that polls for events on file/socket descriptors.
@@ -57,38 +57,35 @@ class DeferEvent;
  * thread that runs it, except where explicitly documented as
  * thread-safe.
  *
- * @see SocketEvent, MultiSocketMonitor, TimerEvent, IdleEvent
+ * @see SocketEvent, MultiSocketMonitor, TimerEvent, DeferEvent, InjectEvent
  */
 class EventLoop final
 {
 #ifdef HAVE_THREADED_EVENT_LOOP
 	WakeFD wake_fd;
-	SocketEvent wake_event;
+	SocketEvent wake_event{*this, BIND_THIS_METHOD(OnSocketReady), wake_fd.GetSocket()};
 #endif
 
-	struct TimerCompare {
-		constexpr bool operator()(const TimerEvent &a,
-					  const TimerEvent &b) const noexcept;
-	};
+	TimerWheel coarse_timers;
+	TimerList timers;
 
-	using TimerSet =
-		boost::intrusive::multiset<TimerEvent,
-					   boost::intrusive::base_hook<boost::intrusive::set_base_hook<boost::intrusive::link_mode<boost::intrusive::auto_unlink>>>,
-					   boost::intrusive::compare<TimerCompare>,
-					   boost::intrusive::constant_time_size<false>>;
-	TimerSet timers;
+	using DeferList = IntrusiveList<DeferEvent>;
 
-	using IdleList = IntrusiveList<IdleEvent>;
-	IdleList idle;
+	DeferList defer;
+
+	/**
+	 * This is like #defer, but gets invoked when the loop is idle.
+	 */
+	DeferList idle;
 
 #ifdef HAVE_THREADED_EVENT_LOOP
 	Mutex mutex;
 
-	using DeferredList =
-		boost::intrusive::list<DeferEvent,
+	using InjectList =
+		boost::intrusive::list<InjectEvent,
 				       boost::intrusive::base_hook<boost::intrusive::list_base_hook<>>,
 				       boost::intrusive::constant_time_size<false>>;
-	DeferredList deferred;
+	InjectList inject;
 #endif
 
 	using SocketList = IntrusiveList<SocketEvent>;
@@ -109,8 +106,6 @@ class EventLoop final
 	std::unique_ptr<Uring::Manager> uring;
 #endif
 
-	Event::Clock::time_point now = Event::Clock::now();
-
 #ifdef HAVE_THREADED_EVENT_LOOP
 	/**
 	 * A reference to the thread that is currently inside Run().
@@ -126,7 +121,7 @@ class EventLoop final
 	bool alive;
 #endif
 
-	std::atomic_bool quit;
+	std::atomic_bool quit{false};
 
 	/**
 	 * True when the object has been modified and another check is
@@ -150,6 +145,8 @@ class EventLoop final
 
 	EventPollBackend poll_backend;
 
+	ClockCache<std::chrono::steady_clock> steady_clock_cache;
+
 public:
 	/**
 	 * Throws on error.
@@ -164,19 +161,30 @@ public:
 
 	~EventLoop() noexcept;
 
+	EventLoop(const EventLoop &other) = delete;
+	EventLoop &operator=(const EventLoop &other) = delete;
+
+	const auto &GetSteadyClockCache() const noexcept {
+		return steady_clock_cache;
+	}
+
 	/**
-	 * A caching wrapper for Event::Clock::now().
+	 * Caching wrapper for std::chrono::steady_clock::now().  The
+	 * real clock is queried at most once per event loop
+	 * iteration, because it is assumed that the event loop runs
+	 * for a negligible duration.
 	 */
-	auto GetTime() const {
+	[[gnu::pure]]
+	const auto &SteadyNow() const noexcept {
 #ifdef HAVE_THREADED_EVENT_LOOP
 		assert(IsInside());
 #endif
 
-		return now;
+		return steady_clock_cache.now();
 	}
 
 #ifdef HAVE_URING
-	gcc_pure
+	[[gnu::pure]]
 	Uring::Queue *GetUring() noexcept;
 #endif
 
@@ -198,25 +206,30 @@ public:
 	 */
 	bool AbandonFD(SocketEvent &event) noexcept;
 
-	void AddIdle(IdleEvent &i) noexcept;
+	void Insert(CoarseTimerEvent &t) noexcept;
+	void Insert(FineTimerEvent &t) noexcept;
 
-	void AddTimer(TimerEvent &t, Event::Duration d) noexcept;
+	/**
+	 * Schedule a call to DeferEvent::RunDeferred().
+	 */
+	void AddDefer(DeferEvent &d) noexcept;
+	void AddIdle(DeferEvent &e) noexcept;
 
 #ifdef HAVE_THREADED_EVENT_LOOP
 	/**
-	 * Schedule a call to DeferEvent::RunDeferred().
+	 * Schedule a call to the InjectEvent.
 	 *
 	 * This method is thread-safe.
 	 */
-	void AddDeferred(DeferEvent &d) noexcept;
+	void AddInject(InjectEvent &d) noexcept;
 
 	/**
-	 * Cancel a pending call to DeferEvent::RunDeferred().
+	 * Cancel a pending call to the InjectEvent.
 	 * However after returning, the call may still be running.
 	 *
 	 * This method is thread-safe.
 	 */
-	void RemoveDeferred(DeferEvent &d) noexcept;
+	void RemoveInject(InjectEvent &d) noexcept;
 #endif
 
 	/**
@@ -226,13 +239,22 @@ public:
 	void Run() noexcept;
 
 private:
+	void RunDeferred() noexcept;
+
+	/**
+	 * Invoke one "idle" #DeferEvent.
+	 *
+	 * @return false if there was no such event
+	 */
+	bool RunOneIdle() noexcept;
+
 #ifdef HAVE_THREADED_EVENT_LOOP
 	/**
-	 * Invoke all pending DeferEvents.
+	 * Invoke all pending InjectEvents.
 	 *
 	 * Caller must lock the mutex.
 	 */
-	void HandleDeferred() noexcept;
+	void HandleInject() noexcept;
 #endif
 
 	/**
@@ -268,7 +290,7 @@ public:
 	/**
 	 * Are we currently running inside this EventLoop's thread?
 	 */
-	gcc_pure
+	[[gnu::pure]]
 	bool IsInside() const noexcept {
 #ifdef HAVE_THREADED_EVENT_LOOP
 		return thread.IsInside();

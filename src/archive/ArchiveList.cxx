@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,7 +30,7 @@
 
 #include <string.h>
 
-const ArchivePlugin *const archive_plugins[] = {
+constexpr const ArchivePlugin *archive_plugins[] = {
 #ifdef ENABLE_BZ2
 	&bz2_archive_plugin,
 #endif

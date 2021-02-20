@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -395,7 +395,7 @@ NfsConnection::DestroyContext() noexcept
 #endif
 
 	if (!mount_finished) {
-		assert(mount_timeout_event.IsActive());
+		assert(mount_timeout_event.IsPending());
 		mount_timeout_event.Cancel();
 	}
 
@@ -552,7 +552,7 @@ NfsConnection::MountCallback(int status, [[maybe_unused]] nfs_context *nfs,
 
 	mount_finished = true;
 
-	assert(mount_timeout_event.IsActive() || in_destroy);
+	assert(mount_timeout_event.IsPending() || in_destroy);
 	mount_timeout_event.Cancel();
 
 	if (status < 0) {

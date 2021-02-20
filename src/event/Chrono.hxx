@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,11 +25,12 @@
 namespace Event {
 
 /**
- * The clock used by class #EventLoop and class #TimerEvent.
+ * The clock used by classes #EventLoop, #CoarseTimerEvent and #FineTimerEvent.
  */
 using Clock = std::chrono::steady_clock;
 
 using Duration = Clock::duration;
+using TimePoint = Clock::time_point;
 
 } // namespace Event
 

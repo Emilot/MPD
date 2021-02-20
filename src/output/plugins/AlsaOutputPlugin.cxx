@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -37,7 +37,8 @@
 #include "util/ConstBuffer.hxx"
 #include "util/StringView.hxx"
 #include "event/MultiSocketMonitor.hxx"
-#include "event/DeferEvent.hxx"
+#include "event/InjectEvent.hxx"
+#include "event/FineTimerEvent.hxx"
 #include "event/Call.hxx"
 #include "Log.hxx"
 
@@ -55,7 +56,7 @@ static constexpr unsigned MPD_ALSA_BUFFER_TIME_US = 500000;
 class AlsaOutput final
 	: AudioOutput, MultiSocketMonitor {
 
-	DeferEvent defer_invalidate_sockets;
+	InjectEvent defer_invalidate_sockets;
 
 	/**
 	 * This timer is used to re-schedule the #MultiSocketMonitor
@@ -64,7 +65,7 @@ class AlsaOutput final
 	 * generating silence if Play() doesn't get called soon enough
 	 * to avoid the xrun.
 	 */
-	TimerEvent silence_timer;
+	FineTimerEvent silence_timer;
 
 	PeriodClock throttle_silence_log;
 
@@ -1181,7 +1182,7 @@ try {
 	LockCaughtError();
 }
 
-const struct AudioOutputPlugin alsa_output_plugin = {
+constexpr struct AudioOutputPlugin alsa_output_plugin = {
 	"alsa",
 	alsa_test_default_device,
 	&AlsaOutput::Create,

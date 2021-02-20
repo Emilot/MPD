@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -127,6 +127,10 @@ public:
 
 	void Add(std::unique_ptr<FilteredAudioOutput> output,
 		 bool enable) noexcept;
+
+	void AddCopy(AudioOutputControl *outputControl,
+		     bool enable) noexcept;
+
 
 	void SetReplayGainMode(ReplayGainMode mode) noexcept;
 

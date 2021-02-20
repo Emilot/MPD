@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The Music Player Daemon Project
+ * Copyright 2020-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -59,6 +59,7 @@ case x:                                                                         
 		C(E_INVALIDARG);
 		C(E_OUTOFMEMORY);
 		C(E_POINTER);
+		C(NO_ERROR);
 #undef C
 	}
 	return std::string_view();

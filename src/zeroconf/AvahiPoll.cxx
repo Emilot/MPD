@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -19,7 +19,7 @@
 
 #include "AvahiPoll.hxx"
 #include "event/SocketEvent.hxx"
-#include "event/TimerEvent.hxx"
+#include "event/CoarseTimerEvent.hxx"
 #include "time/Convert.hxx"
 
 static unsigned
@@ -77,7 +77,7 @@ private:
 };
 
 struct AvahiTimeout final {
-	TimerEvent timer;
+	CoarseTimerEvent timer;
 
 	const AvahiTimeoutCallback callback;
 	void *const userdata;

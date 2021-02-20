@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,8 +31,9 @@
 void
 SocketEvent::Open(SocketDescriptor _fd) noexcept
 {
-	assert(!fd.IsDefined());
 	assert(_fd.IsDefined());
+	assert(!fd.IsDefined());
+	assert(GetScheduledFlags() == 0);
 
 	fd = _fd;
 }
@@ -43,8 +44,21 @@ SocketEvent::Close() noexcept
 	if (!fd.IsDefined())
 		return;
 
-	if (std::exchange(scheduled_flags, 0) != 0)
+	/* closing the socket automatically unregisters it from epoll,
+	   so we can omit the epoll_ctl(EPOLL_CTL_DEL) call and save
+	   one system call */
+	if (std::exchange(scheduled_flags, 0) != 0) {
+#ifdef HAVE_THREADED_EVENT_LOOP
+		/* can't use this optimization in multi-threaded
+		   programs, because all file descriptors get
+		   duplicated in forked processes, leaving them
+		   registered in epoll, which could cause the parent
+		   to crash */
+		loop.RemoveFD(fd.Get(), *this);
+#else
 		loop.AbandonFD(*this);
+#endif
+	}
 	fd.Close();
 }
 
@@ -60,6 +74,9 @@ SocketEvent::Abandon() noexcept
 bool
 SocketEvent::Schedule(unsigned flags) noexcept
 {
+	if (flags != 0)
+		flags |= IMPLICIT_FLAGS;
+
 	if (flags == GetScheduledFlags())
 		return true;
 
@@ -95,20 +112,10 @@ SocketEvent::Schedule(unsigned flags) noexcept
 }
 
 void
-SocketEvent::ScheduleImplicit() noexcept
-{
-	assert(IsDefined());
-	assert(scheduled_flags == 0);
-
-	scheduled_flags = IMPLICIT_FLAGS;
-	loop.AddFD(fd.Get(), scheduled_flags, *this);
-}
-
-void
 SocketEvent::Dispatch() noexcept
 {
 	const unsigned flags = std::exchange(ready_flags, 0) &
-		(GetScheduledFlags() | IMPLICIT_FLAGS);
+		GetScheduledFlags();
 
 	if (flags != 0)
 		callback(flags);

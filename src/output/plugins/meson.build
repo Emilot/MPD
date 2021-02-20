@@ -36,7 +36,6 @@ output_features.set('ENABLE_HTTPD_OUTPUT', get_option('httpd'))
 if get_option('httpd')
   output_plugins_sources += [
     'httpd/IcyMetaDataServer.cxx',
-    'httpd/Page.cxx',
     'httpd/HttpdClient.cxx',
     'httpd/HttpdOutputPlugin.cxx',
   ]
@@ -112,6 +111,19 @@ endif
 
 if libsndio_dep.found()
   output_plugins_sources += 'SndioOutputPlugin.cxx'
+endif
+
+output_features.set('ENABLE_SNAPCAST_OUTPUT', get_option('snapcast'))
+if get_option('snapcast')
+  output_plugins_sources += [
+    'snapcast/SnapcastOutputPlugin.cxx',
+    'snapcast/Client.cxx',
+  ]
+  output_plugins_deps += [ event_dep, net_dep ]
+
+  # TODO: the Snapcast plugin needs just the "wave" encoder, but this
+  # enables all available encoders
+  need_encoder = true
 endif
 
 enable_solaris_output = get_option('solaris_output')

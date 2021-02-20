@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,12 +17,9 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "Page.hxx"
+#ifndef MPD_SNAPCAST_OUTPUT_PLUGIN_HXX
+#define MPD_SNAPCAST_OUTPUT_PLUGIN_HXX
 
-#include <string.h>
+extern const struct AudioOutputPlugin snapcast_output_plugin;
 
-Page::Page(const void *data, size_t size) noexcept
-	:buffer(size)
-{
-	memcpy(&buffer.front(), data, size);
-}
+#endif

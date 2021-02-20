@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,26 +18,3 @@
  */
 
 #include "IdleEvent.hxx"
-#include "Loop.hxx"
-
-#include <cassert>
-
-void
-IdleEvent::Schedule() noexcept
-{
-	assert(loop.IsInside());
-
-	if (IsActive())
-		/* already scheduled */
-		return;
-
-	loop.AddIdle(*this);
-}
-
-void
-IdleEvent::Run() noexcept
-{
-	assert(loop.IsInside());
-
-	callback();
-}

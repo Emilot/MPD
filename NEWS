@@ -1,10 +1,46 @@
 ver 0.23 (not yet released)
 * protocol
   - new command "getvol"
+  - show the audio format in "playlistinfo"
+* output
+  - snapcast: new plugin
 
-ver 0.22.4 (not yet released)
+ver 0.22.6 (2021/02/16)
+* fix missing tags on songs in queue
+
+ver 0.22.5 (2021/02/15)
+* protocol
+  - error for malformed ranges instead of ignoring silently
+  - better error message for open-ended range with "move"
+* database
+  - simple: fix missing CUE sheet metadata in "addid" command
+* tags
+  - id: translate TPE3 to Conductor, not Performer
+* archive
+  - iso9660: another fix for unaligned reads
+* output
+  - httpd: error handling on Windows improved
+  - pulse: fix deadlock with "always_on"
+* Windows:
+  - enable https:// support (via Schannel)
+* Android
+  - work around "Permission denied" on mpd.conf
+
+ver 0.22.4 (2021/01/21)
+* protocol
+  - add command "binarylimit" to allow larger chunk sizes
+  - fix "readpicture" on 32 bit machines
+  - show duration and tags of songs in virtual playlist (CUE) folders
+* storage
+  - curl: fix several WebDAV protocol bugs
 * decoder
   - dsdiff: apply padding to odd-sized chunks
+* filter
+  - ffmpeg: detect the output sample format
+* output
+  - moveoutput: fix always_on and tag lost on move
+* Android
+  - enable https:// support (via OpenSSL)
 
 ver 0.22.3 (2020/11/06)
 * playlist

@@ -22,8 +22,12 @@ endif
 event = static_library(
   'event',
   'SignalMonitor.cxx',
-  'TimerEvent.cxx',
+  'TimerWheel.cxx',
+  'TimerList.cxx',
+  'CoarseTimerEvent.cxx',
+  'FineTimerEvent.cxx',
   'IdleEvent.cxx',
+  'InjectEvent.cxx',
   'DeferEvent.cxx',
   'MaskMonitor.cxx',
   'SocketEvent.cxx',

@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -100,7 +100,7 @@ public:
 		event.Close();
 	}
 
-	[[nodiscard]] gcc_pure
+	[[nodiscard]] [[gnu::pure]]
 	std::string ToString() const noexcept {
 		return ::ToString(address);
 	}
@@ -328,7 +328,7 @@ ServerSocket::AddPortIPv6(unsigned port) noexcept
 /**
  * Is IPv6 supported by the kernel?
  */
-gcc_pure
+[[gnu::pure]]
 static bool
 SupportsIPv6() noexcept
 {

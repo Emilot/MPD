@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -37,6 +37,17 @@ AudioOutputControl::AudioOutputControl(std::unique_ptr<FilteredAudioOutput> _out
 	 client(_client),
 	 thread(BIND_THIS_METHOD(Task))
 {
+}
+
+AudioOutputControl::AudioOutputControl(AudioOutputControl *_output,
+				       AudioOutputClient &_client) noexcept
+	:output(_output->Steal()),
+	 name(output->GetName()),
+	 client(_client),
+	 thread(BIND_THIS_METHOD(Task))
+{
+     tags =_output->tags;
+	 always_on=_output->always_on;
 }
 
 AudioOutputControl::~AudioOutputControl() noexcept

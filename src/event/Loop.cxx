@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,13 +18,13 @@
  */
 
 #include "Loop.hxx"
-#include "TimerEvent.hxx"
+#include "DeferEvent.hxx"
 #include "SocketEvent.hxx"
 #include "IdleEvent.hxx"
 #include "util/ScopeExit.hxx"
 
 #ifdef HAVE_THREADED_EVENT_LOOP
-#include "DeferEvent.hxx"
+#include "InjectEvent.hxx"
 #endif
 
 #ifdef HAVE_URING
@@ -33,40 +33,30 @@
 #include <stdio.h>
 #endif
 
-constexpr bool
-EventLoop::TimerCompare::operator()(const TimerEvent &a,
-				    const TimerEvent &b) const noexcept
-{
-	return a.due < b.due;
-}
-
 EventLoop::EventLoop(
 #ifdef HAVE_THREADED_EVENT_LOOP
 		     ThreadId _thread
 #endif
 		     )
-	:
 #ifdef HAVE_THREADED_EVENT_LOOP
-	wake_event(*this, BIND_THIS_METHOD(OnSocketReady)),
-	 thread(_thread),
+	:thread(_thread),
 	 /* if this instance is hosted by an EventThread (no ThreadId
 	    known yet) then we're not yet alive until the thread is
 	    started; for the main EventLoop instance, we assume it's
 	    already alive, because nobody but EventThread will call
 	    SetAlive() */
-	 alive(!_thread.IsNull()),
+	 alive(!_thread.IsNull())
 #endif
-	 quit(false)
 {
-#ifdef HAVE_THREADED_EVENT_LOOP
-	wake_event.Open(SocketDescriptor(wake_fd.Get()));
-#endif
 }
 
 EventLoop::~EventLoop() noexcept
 {
-	assert(timers.empty());
+	assert(defer.empty());
 	assert(idle.empty());
+#ifdef HAVE_THREADED_EVENT_LOOP
+	assert(inject.empty());
+#endif
 	assert(sockets.empty());
 	assert(ready_sockets.empty());
 }
@@ -100,19 +90,6 @@ EventLoop::Break() noexcept
 #ifdef HAVE_THREADED_EVENT_LOOP
 	wake_fd.Write();
 #endif
-}
-
-bool
-EventLoop::AbandonFD(SocketEvent &event)  noexcept
-{
-#ifdef HAVE_THREADED_EVENT_LOOP
-	assert(!IsAlive() || IsInside());
-#endif
-	assert(event.IsDefined());
-
-	event.unlink();
-
-	return poll_backend.Abandon(event.GetSocket().Get());
 }
 
 bool
@@ -152,46 +129,84 @@ EventLoop::RemoveFD(int fd, SocketEvent &event) noexcept
 	return poll_backend.Remove(fd);
 }
 
-void
-EventLoop::AddIdle(IdleEvent &i) noexcept
+bool
+EventLoop::AbandonFD(SocketEvent &event)  noexcept
 {
-	assert(IsInside());
+#ifdef HAVE_THREADED_EVENT_LOOP
+	assert(!IsAlive() || IsInside());
+#endif
+	assert(event.IsDefined());
 
-	idle.push_back(i);
+	event.unlink();
+
+	return poll_backend.Abandon(event.GetSocket().Get());
+}
+
+void
+EventLoop::Insert(CoarseTimerEvent &t) noexcept
+{
+	coarse_timers.Insert(t);
 	again = true;
 }
 
 void
-EventLoop::AddTimer(TimerEvent &t, Event::Duration d) noexcept
+EventLoop::Insert(FineTimerEvent &t) noexcept
 {
 	assert(IsInside());
 
-	t.due = now + d;
-	timers.insert(t);
+	timers.Insert(t);
 	again = true;
 }
 
 inline Event::Duration
 EventLoop::HandleTimers() noexcept
 {
-	Event::Duration timeout;
+	const auto now = SteadyNow();
 
-	while (!quit) {
-		auto i = timers.begin();
-		if (i == timers.end())
-			break;
+	auto fine_timeout = timers.Run(now);
+	auto coarse_timeout = coarse_timers.Run(now);
 
-		TimerEvent &t = *i;
-		timeout = t.due - now;
-		if (timeout > timeout.zero())
-			return timeout;
+	return fine_timeout.count() < 0 ||
+		(coarse_timeout.count() >= 0 && coarse_timeout < fine_timeout)
+		? coarse_timeout
+		: fine_timeout;
+}
 
-		timers.erase(i);
+void
+EventLoop::AddDefer(DeferEvent &d) noexcept
+{
+	defer.push_back(d);
+	again = true;
+}
 
-		t.Run();
+void
+EventLoop::AddIdle(DeferEvent &e) noexcept
+{
+	idle.push_front(e);
+	again = true;
+}
+
+void
+EventLoop::RunDeferred() noexcept
+{
+	while (!defer.empty() && !quit) {
+		defer.pop_front_and_dispose([](DeferEvent *e){
+			e->Run();
+		});
 	}
+}
 
-	return Event::Duration(-1);
+bool
+EventLoop::RunOneIdle() noexcept
+{
+	if (idle.empty())
+		return false;
+
+	idle.pop_front_and_dispose([](DeferEvent *e){
+		e->Run();
+	});
+
+	return true;
 }
 
 template<class ToDuration, class Rep, class Period>
@@ -212,7 +227,7 @@ duration_cast_round_up(std::chrono::duration<Rep, Period> d) noexcept
  * value (= never times out) is translated to the magic value -1.
  */
 static constexpr int
-ExportTimeoutMS(Event::Duration timeout)
+ExportTimeoutMS(Event::Duration timeout) noexcept
 {
 	return timeout >= timeout.zero()
 		? int(duration_cast_round_up<std::chrono::milliseconds>(timeout).count())
@@ -271,8 +286,9 @@ EventLoop::Run() noexcept
 	};
 #endif
 
+	steady_clock_cache.flush();
+
 	do {
-		now = std::chrono::steady_clock::now();
 		again = false;
 
 		/* invoke timers */
@@ -281,30 +297,31 @@ EventLoop::Run() noexcept
 		if (quit)
 			break;
 
-		/* invoke idle */
+		RunDeferred();
 
-		while (!idle.empty()) {
-			IdleEvent &m = idle.front();
-			idle.pop_front();
-			m.Run();
-
-			if (quit)
-				return;
-		}
+		if (RunOneIdle())
+			/* check for other new events after each
+			   "idle" invocation to ensure that the other
+			   "idle" events are really invoked at the
+			   very end */
+			continue;
 
 #ifdef HAVE_THREADED_EVENT_LOOP
 		/* try to handle DeferEvents without WakeFD
 		   overhead */
 		{
 			const std::lock_guard<Mutex> lock(mutex);
-			HandleDeferred();
-			busy = false;
+			HandleInject();
+#endif
 
 			if (again)
 				/* re-evaluate timers because one of
-				   the IdleEvents may have added a
+				   the DeferEvents may have added a
 				   new timeout */
 				continue;
+
+#ifdef HAVE_THREADED_EVENT_LOOP
+			busy = false;
 		}
 #endif
 
@@ -312,7 +329,7 @@ EventLoop::Run() noexcept
 
 		Wait(timeout);
 
-		now = std::chrono::steady_clock::now();
+		steady_clock_cache.flush();
 
 #ifdef HAVE_THREADED_EVENT_LOOP
 		{
@@ -343,7 +360,7 @@ EventLoop::Run() noexcept
 #ifdef HAVE_THREADED_EVENT_LOOP
 
 void
-EventLoop::AddDeferred(DeferEvent &d) noexcept
+EventLoop::AddInject(InjectEvent &d) noexcept
 {
 	bool must_wake;
 
@@ -353,10 +370,10 @@ EventLoop::AddDeferred(DeferEvent &d) noexcept
 			return;
 
 		/* we don't need to wake up the EventLoop if another
-		   DeferEvent has already done it */
-		must_wake = !busy && deferred.empty();
+		   InjectEvent has already done it */
+		must_wake = !busy && inject.empty();
 
-		deferred.push_back(d);
+		inject.push_back(d);
 		again = true;
 	}
 
@@ -365,25 +382,25 @@ EventLoop::AddDeferred(DeferEvent &d) noexcept
 }
 
 void
-EventLoop::RemoveDeferred(DeferEvent &d) noexcept
+EventLoop::RemoveInject(InjectEvent &d) noexcept
 {
 	const std::lock_guard<Mutex> protect(mutex);
 
 	if (d.IsPending())
-		deferred.erase(deferred.iterator_to(d));
+		inject.erase(inject.iterator_to(d));
 }
 
 void
-EventLoop::HandleDeferred() noexcept
+EventLoop::HandleInject() noexcept
 {
-	while (!deferred.empty() && !quit) {
-		auto &m = deferred.front();
+	while (!inject.empty() && !quit) {
+		auto &m = inject.front();
 		assert(m.IsPending());
 
-		deferred.pop_front();
+		inject.pop_front();
 
 		const ScopeUnlock unlock(mutex);
-		m.RunDeferred();
+		m.Run();
 	}
 }
 
@@ -395,7 +412,7 @@ EventLoop::OnSocketReady([[maybe_unused]] unsigned flags) noexcept
 	wake_fd.Read();
 
 	const std::lock_guard<Mutex> lock(mutex);
-	HandleDeferred();
+	HandleInject();
 }
 
 #endif

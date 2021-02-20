@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,29 +17,17 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-/** \file
- *
- * A parser for the RIFF file format (e.g. WAV).
- */
+#include "InjectEvent.hxx"
+#include "Loop.hxx"
 
-#ifndef MPD_RIFF_HXX
-#define MPD_RIFF_HXX
+void
+InjectEvent::Cancel() noexcept
+{
+	loop.RemoveInject(*this);
+}
 
-#include "thread/Mutex.hxx"
-
-#include <cstddef>
-
-class InputStream;
-
-/**
- * Seeks the RIFF file to the ID3 chunk.
- *
- * Throws std::runtime_error on error.
- *
- * @param is a locked #InputStream
- * @return the size of the ID3 chunk
- */
-size_t
-riff_seek_id3(InputStream &is, std::unique_lock<Mutex> &lock);
-
-#endif
+void
+InjectEvent::Schedule() noexcept
+{
+	loop.AddInject(*this);
+}

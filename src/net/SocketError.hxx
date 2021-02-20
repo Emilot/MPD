@@ -1,26 +1,35 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
- * http://www.musicpd.org
+ * Copyright 2015-2021 Max Kellermann <max.kellermann@gmail.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * - Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * - Redistributions in binary form must reproduce the above copyright
+ * notice, this list of conditions and the following disclaimer in the
+ * documentation and/or other materials provided with the
+ * distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE
+ * FOUNDATION OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef MPD_SOCKET_ERROR_HXX
-#define MPD_SOCKET_ERROR_HXX
+#ifndef SOCKET_ERROR_HXX
+#define SOCKET_ERROR_HXX
 
-#include "util/Compiler.h"
 #include "system/Error.hxx"
 
 #ifdef _WIN32
@@ -31,7 +40,7 @@ typedef DWORD socket_error_t;
 typedef int socket_error_t;
 #endif
 
-gcc_pure
+[[gnu::pure]]
 static inline socket_error_t
 GetSocketError() noexcept
 {
@@ -42,18 +51,83 @@ GetSocketError() noexcept
 #endif
 }
 
-gcc_const
-static inline bool
-IsSocketErrorAgain(socket_error_t code) noexcept
+constexpr bool
+IsSocketErrorInProgress(socket_error_t code) noexcept
 {
 #ifdef _WIN32
 	return code == WSAEINPROGRESS;
 #else
-	return code == EAGAIN;
+	return code == EINPROGRESS;
 #endif
 }
 
-gcc_const
+constexpr bool
+IsSocketErrorWouldBlock(socket_error_t code) noexcept
+{
+#ifdef _WIN32
+	return code == WSAEWOULDBLOCK;
+#else
+	return code == EWOULDBLOCK;
+#endif
+}
+
+constexpr bool
+IsSocketErrorConnectWouldBlock(socket_error_t code) noexcept
+{
+#if defined(_WIN32) || defined(__linux__)
+	/* on Windows, WSAEINPROGRESS is for blocking sockets and
+	   WSAEWOULDBLOCK for non-blocking sockets */
+	/* on Linux, EAGAIN==EWOULDBLOCK is for local sockets and
+	   EINPROGRESS is for all other sockets */
+	return IsSocketErrorInProgress(code) || IsSocketErrorWouldBlock(code);
+#else
+	/* on all other operating systems, there's just EINPROGRESS */
+	return IsSocketErrorInProgress(code);
+#endif
+}
+
+constexpr bool
+IsSocketErrorSendWouldBlock(socket_error_t code) noexcept
+{
+#ifdef _WIN32
+	/* on Windows, WSAEINPROGRESS is for blocking sockets and
+	   WSAEWOULDBLOCK for non-blocking sockets */
+	return IsSocketErrorInProgress(code) || IsSocketErrorWouldBlock(code);
+#else
+	/* on all other operating systems, there's just EAGAIN==EWOULDBLOCK */
+	return IsSocketErrorWouldBlock(code);
+#endif
+}
+
+constexpr bool
+IsSocketErrorReceiveWouldBlock(socket_error_t code) noexcept
+{
+#ifdef _WIN32
+	/* on Windows, WSAEINPROGRESS is for blocking sockets and
+	   WSAEWOULDBLOCK for non-blocking sockets */
+	return IsSocketErrorInProgress(code) || IsSocketErrorWouldBlock(code);
+#else
+	/* on all other operating systems, there's just
+	   EAGAIN==EWOULDBLOCK */
+	return IsSocketErrorWouldBlock(code);
+#endif
+}
+
+constexpr bool
+IsSocketErrorAcceptWouldBlock(socket_error_t code) noexcept
+{
+#ifdef _WIN32
+	/* on Windows, WSAEINPROGRESS is for blocking sockets and
+	   WSAEWOULDBLOCK for non-blocking sockets */
+	return IsSocketErrorInProgress(code) || IsSocketErrorWouldBlock(code);
+#else
+	/* on all other operating systems, there's just
+	   EAGAIN==EWOULDBLOCK */
+	return IsSocketErrorWouldBlock(code);
+#endif
+}
+
+[[gnu::const]]
 static inline bool
 IsSocketErrorInterruped(socket_error_t code) noexcept
 {
@@ -64,7 +138,7 @@ IsSocketErrorInterruped(socket_error_t code) noexcept
 #endif
 }
 
-gcc_const
+[[gnu::const]]
 static inline bool
 IsSocketErrorClosed(socket_error_t code) noexcept
 {
@@ -96,7 +170,7 @@ public:
 	}
 };
 
-gcc_const
+[[gnu::const]]
 static inline std::system_error
 MakeSocketError(socket_error_t code, const char *msg) noexcept
 {
@@ -107,7 +181,7 @@ MakeSocketError(socket_error_t code, const char *msg) noexcept
 #endif
 }
 
-gcc_pure
+[[gnu::pure]]
 static inline std::system_error
 MakeSocketError(const char *msg) noexcept
 {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2020 The Music Player Daemon Project
+ * Copyright 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -133,6 +133,19 @@ MultipleOutputs::Add(std::unique_ptr<FilteredAudioOutput> output,
 {
 	// TODO: this operation needs to be protected with a mutex
 	outputs.emplace_back(std::make_unique<AudioOutputControl>(std::move(output),
+								  client));
+
+	outputs.back()->LockSetEnabled(enable);
+
+	client.ApplyEnabled();
+}
+
+void
+MultipleOutputs::AddCopy(AudioOutputControl *outputControl,
+		     bool enable) noexcept
+{
+	// TODO: this operation needs to be protected with a mutex
+	outputs.emplace_back(std::make_unique<AudioOutputControl>(outputControl,
 								  client));
 
 	outputs.back()->LockSetEnabled(enable);
