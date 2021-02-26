@@ -229,7 +229,7 @@ sacdiso_container_scan(Path path_fs) {
 	}
 	TagBuilder tag_builder;
 	auto tail = list.before_begin();
-	auto suffix = uri_get_suffix(path_fs.c_str());
+	auto suffix = path_fs.GetSuffix();
 	char track_name[64];
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
 	auto mulch_count = sacd_reader->get_tracks(AREA_MULCH);
