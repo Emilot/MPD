@@ -231,7 +231,7 @@ dvdaiso_container_scan(Path path_fs) {
 	}
 	TagBuilder tag_builder;
 	auto tail = list.before_begin();
-	auto suffix = uri_get_suffix(path_fs.c_str());
+	auto suffix = path_fs.GetSuffix();
 	char track_name[64];
 	for (auto track_index = 0u; track_index < dvda_reader->get_tracks(); track_index++) {
 		if (dvda_reader->select_track(track_index)) {
