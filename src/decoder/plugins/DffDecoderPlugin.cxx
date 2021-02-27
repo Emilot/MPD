@@ -223,14 +223,18 @@ dsdiff_container_scan(Path path_fs) {
 				StringFormat<64>(DSDIFF_TRACKXXX_FMT, '2', track + 1, suffix),
 				tag_builder.Commit()
 			);
+		}
 	}
 	if (mulch_count > 0 && param_playable_area != AREA_TWOCH) {
 		sacd_reader->select_area(AREA_MULCH);
 		for (auto track = 0u; track < mulch_count; track++) {
 			AddTagHandler h(tag_builder);
 			dsdiff_scan_info(track, h);
-			sprintf(track_name, DSDIFF_TRACKXXX_FMT, 'M', track + twoch_count + 1, suffix);
-			tail = list.emplace_after(tail, track_name, tag_builder.Commit());
+			tail = list.emplace_after(
+				tail,
+				StringFormat<64>(DSDIFF_TRACKXXX_FMT, 'M', track + twoch_count + 1, suffix),
+				tag_builder.Commit()
+			);
 		}
 	}
 	return list;
