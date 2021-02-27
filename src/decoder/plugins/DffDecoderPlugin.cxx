@@ -36,16 +36,14 @@
 #include "thread/Mutex.hxx"
 #include "util/Alloc.hxx"
 #include "util/BitReverse.hxx"
+#include "util/StringFormat.hxx"
 #include "util/StringView.hxx"
-#include "util/FormatString.hxx"
-#include "util/AllocatedString.hxx"
 #include "util/UriExtract.hxx"
 #include "util/Domain.hxx"
 #include "Log.hxx"
 
 #include <assert.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
 #include <vector>
 
 using namespace std;
@@ -61,20 +59,20 @@ static bool      param_lsbitfirst;
 static area_id_e param_playable_area;
 static bool      param_use_stdio;
 
-static string         dsdiff_uri;
+static std::string    dsdiff_uri;
 static sacd_media_t*  sacd_media  = nullptr;
 static sacd_reader_t* sacd_reader = nullptr;
 
 static unsigned
 get_container_path_length(const char* path) {
-	string container_path = path;
+	std::string container_path = path;
 	container_path.resize(strrchr(container_path.c_str(), '/') - container_path.c_str());
 	return container_path.length();
 }
 
 static string
 get_container_path(const char* path) {
-	string container_path = path;
+	std::string container_path = path;
 	auto length = get_container_path_length(path);
 	if (length >= 4) {
 		container_path.resize(length);
@@ -106,7 +104,7 @@ get_subsong(const char* path) {
 
 static bool
 dsdiff_update_toc(const char* path) {
-	string curr_uri = path;
+	std::string curr_uri = path;
 	if (path != nullptr) {
 		if (!dsdiff_uri.compare(curr_uri)) {
 			return true;
@@ -144,7 +142,7 @@ dsdiff_update_toc(const char* path) {
 			return false;
 		}
 		if (!sacd_media->open(path)) {
-			string err;
+			std::string err;
 			err  = "sacd_media->open('";
 			err += path;
 			err += "') failed";
@@ -162,7 +160,7 @@ dsdiff_update_toc(const char* path) {
 
 static void
 dsdiff_scan_info(unsigned track, TagHandler& handler) {
-	string tag_value = to_string(track + 1);
+	std::string tag_value = to_string(track + 1);
 	handler.OnTag(TAG_TRACK, tag_value.c_str());
 	handler.OnDuration(SongTime::FromS(sacd_reader->get_duration(track)));
 	sacd_reader->get_info(track, handler);
@@ -210,7 +208,6 @@ dsdiff_container_scan(Path path_fs) {
 	TagBuilder tag_builder;
 	auto tail = list.before_begin();
 	auto suffix = path_fs.GetSuffix();
-	char track_name[64];
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
 	auto mulch_count = sacd_reader->get_tracks(AREA_MULCH);
 	if (twoch_count + mulch_count < 2) {
@@ -221,9 +218,11 @@ dsdiff_container_scan(Path path_fs) {
 		for (auto track = 0u; track < twoch_count; track++) {
 			AddTagHandler handler(tag_builder);
 			dsdiff_scan_info(track, handler);
-			sprintf(track_name, DSDIFF_TRACKXXX_FMT, '2', track + 1, suffix);
-			tail = list.emplace_after(tail, track_name, tag_builder.Commit());
-		}
+			tail = list.emplace_after(
+				tail,
+				StringFormat<64>(DSDIFF_TRACKXXX_FMT, '2', track + 1, suffix),
+				tag_builder.Commit()
+			);
 	}
 	if (mulch_count > 0 && param_playable_area != AREA_TWOCH) {
 		sacd_reader->select_area(AREA_MULCH);
@@ -276,8 +275,8 @@ dsdiff_file_decode(DecoderClient &client, Path path_fs) {
 	auto dsd_framerate = sacd_reader->get_framerate();
 	auto dsd_buf_size = dsd_samplerate / 8 / dsd_framerate * dsd_channels;
 	auto dst_buf_size = dsd_samplerate / 8 / dsd_framerate * dsd_channels;
-	vector<uint8_t> dsd_buf;
-	vector<uint8_t> dst_buf;
+	std::vector<uint8_t> dsd_buf;
+	std::vector<uint8_t> dst_buf;
 	dsd_buf.resize(param_dstdec_threads * dsd_buf_size);
 	dst_buf.resize(param_dstdec_threads * dst_buf_size);
 
@@ -414,8 +413,8 @@ static const char* const dsdiff_mime_types[] = {
 };
 
 constexpr DecoderPlugin dff_decoder_plugin =
-DecoderPlugin("dsdiff", dsdiff_file_decode, dsdiff_scan_file)
-.WithInit(dsdiff_init, dsdiff_finish)
-.WithContainer(dsdiff_container_scan)
-.WithSuffixes(dsdiff_suffixes)
-.WithMimeTypes(dsdiff_mime_types);
+	DecoderPlugin("dsdiff", dsdiff_file_decode, dsdiff_scan_file)
+	.WithInit(dsdiff_init, dsdiff_finish)
+	.WithContainer(dsdiff_container_scan)
+	.WithSuffixes(dsdiff_suffixes)
+	.WithMimeTypes(dsdiff_mime_types);
