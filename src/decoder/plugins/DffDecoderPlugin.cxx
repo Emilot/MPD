@@ -184,7 +184,7 @@ dsdiff_init(const ConfigBlock& block) {
 			param_playable_area = AREA_MULCH;
 		}
 	}
-	param_use_stdio = block.GetBlockValue("use_stdio", false);
+	param_use_stdio = block.GetBlockValue("use_stdio", true);
 	return true;
 }
 
