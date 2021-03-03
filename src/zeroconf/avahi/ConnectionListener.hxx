@@ -32,54 +32,30 @@
 
 #pragma once
 
-#include "Chrono.hxx"
-#include "event/Features.h"
-#include "util/IntrusiveList.hxx"
+#include <avahi-client/client.h>
 
-#ifndef NO_BOOST
-#include <boost/intrusive/set.hpp>
-#endif
+namespace Avahi {
 
-class FineTimerEvent;
-
-/**
- * A list of #FineTimerEvent instances sorted by due time point.
- */
-class TimerList final {
-	struct Compare {
-		constexpr bool operator()(const FineTimerEvent &a,
-					  const FineTimerEvent &b) const noexcept;
-	};
-
-#ifdef NO_BOOST
-	/* when building without Boost, then this is just a sorted
-	   doubly-linked list - this doesn't scale well, but is good
-	   enough for most programs */
-	IntrusiveList<FineTimerEvent> timers;
-#else
-	boost::intrusive::multiset<FineTimerEvent,
-				   boost::intrusive::base_hook<boost::intrusive::set_base_hook<boost::intrusive::link_mode<boost::intrusive::auto_unlink>>>,
-				   boost::intrusive::compare<Compare>,
-				   boost::intrusive::constant_time_size<false>> timers;
-#endif
-
+class ConnectionListener {
 public:
-	TimerList();
-	~TimerList() noexcept;
-
-	TimerList(const TimerList &other) = delete;
-	TimerList &operator=(const TimerList &other) = delete;
-
-	bool IsEmpty() const noexcept {
-		return timers.empty();
-	}
-
-	void Insert(FineTimerEvent &t) noexcept;
+	/**
+	 * The connection to the Avahi daemon has been established.
+	 *
+	 * Note that this may be called again after a collision
+	 * (AVAHI_CLIENT_S_COLLISION) or a host name change
+	 * (AVAHI_CLIENT_S_REGISTERING).
+	 */
+	virtual void OnAvahiConnect(AvahiClient *client) noexcept = 0;
+	virtual void OnAvahiDisconnect() noexcept = 0;
 
 	/**
-	 * Invoke all expired #FineTimerEvent instances and return the
-	 * duration until the next timer expires.  Returns a negative
-	 * duration if there is no timeout.
+	 * Something about the Avahi connection has changed, e.g. a
+	 * collision (AVAHI_CLIENT_S_COLLISION) or a host name change
+	 * (AVAHI_CLIENT_S_REGISTERING).  Services shall be
+	 * unpublished now, and will be re-published in the following
+	 * OnAvahiConnect() call.
 	 */
-	Event::Duration Run(Event::TimePoint now) noexcept;
+	virtual void OnAvahiChanged() noexcept {}
 };
+
+} // namespace Avahi

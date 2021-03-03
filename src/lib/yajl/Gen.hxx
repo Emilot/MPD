@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 Max Kellermann <max.kellermann@gmail.com>
+ * Copyright 2021 Max Kellermann <max.kellermann@gmail.com>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,58 +27,77 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef YAJL_HANDLE_HXX
-#define YAJL_HANDLE_HXX
+#ifndef YAJL_GEN_HXX
+#define YAJL_GEN_HXX
 
-#include <yajl/yajl_parse.h>
+#include "util/ConstBuffer.hxx"
+
+#include <yajl/yajl_gen.h>
 
 #include <algorithm>
+#include <string_view>
 
 namespace Yajl {
 
 /**
- * OO wrapper for a #yajl_handle.
+ * OO wrapper for #yajl_gen.
  */
-class Handle {
-	yajl_handle handle = nullptr;
+class Gen {
+	yajl_gen gen = nullptr;
 
 public:
-	Handle() = default;
+	Gen() = default;
 
-	Handle(const yajl_callbacks *callbacks,
-	       yajl_alloc_funcs *afs,
-	       void *ctx) noexcept
-		:handle(yajl_alloc(callbacks, afs, ctx)) {}
+	explicit Gen(const yajl_alloc_funcs *allocFuncs) noexcept
+		:gen(yajl_gen_alloc(allocFuncs)) {}
 
-	Handle(Handle &&src) noexcept
-		:handle(std::exchange(src.handle, nullptr)) {}
+	Gen(Gen &&src) noexcept
+		:gen(std::exchange(src.gen, nullptr)) {}
 
-	~Handle() noexcept {
-		if (handle != nullptr)
-			yajl_free(handle);
+	~Gen() noexcept {
+		if (gen != nullptr)
+			yajl_gen_free(gen);
 	}
 
-	Handle &operator=(Handle &&src) noexcept {
-		std::swap(handle, src.handle);
+	Gen &operator=(Gen &&src) noexcept {
+		using std::swap;
+		swap(gen, src.gen);
 		return *this;
 	}
 
-	void Parse(const unsigned char *jsonText, size_t jsonTextLength) {
-		HandleStatus(yajl_parse(handle, jsonText, jsonTextLength));
+	void Integer(long long int number) noexcept {
+		yajl_gen_integer(gen, number);
 	}
 
-	void CompleteParse() {
-		HandleStatus(yajl_complete_parse(handle));
+	void String(std::string_view s) noexcept {
+		yajl_gen_string(gen, (const unsigned char *)s.data(), s.size());
 	}
 
-private:
-	void HandleStatus(yajl_status status) {
-		if (status == yajl_status_error)
-			ThrowError();
+	void OpenMap() noexcept {
+		yajl_gen_map_open(gen);
 	}
 
-	[[noreturn]]
-	void ThrowError();
+	void CloseMap() noexcept {
+		yajl_gen_map_close(gen);
+	}
+
+	void OpenArray() noexcept {
+		yajl_gen_array_open(gen);
+	}
+
+	void CloseArray() noexcept {
+		yajl_gen_array_close(gen);
+	}
+
+	ConstBuffer<char> GetBuffer() const noexcept {
+		const unsigned char *buf;
+		size_t len;
+		auto status = yajl_gen_get_buf(gen, &buf, &len);
+		if (status != yajl_gen_status_ok)
+			return nullptr;
+
+		return {(const char *)buf, len};
+	}
 };
 
 } // namespace Yajl

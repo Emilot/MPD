@@ -22,6 +22,7 @@
 #include "Timestamp.hxx"
 #include "Internal.hxx"
 #include "tag/RiffFormat.hxx"
+#include "event/Loop.hxx"
 #include "net/SocketError.hxx"
 #include "net/UniqueSocketDescriptor.hxx"
 #include "util/StringView.hxx"
@@ -57,11 +58,53 @@ SnapcastClient::LockClose() noexcept
 }
 
 void
+SnapcastClient::Push(SnapcastChunkPtr chunk) noexcept
+{
+	if (!active)
+		return;
+
+	chunks.emplace(std::move(chunk));
+	event.ScheduleWrite();
+}
+
+SnapcastChunkPtr
+SnapcastClient::LockPopQueue() noexcept
+{
+	const std::lock_guard<Mutex> protect(output.mutex);
+	if (chunks.empty())
+		return nullptr;
+
+	auto chunk = std::move(chunks.front());
+	chunks.pop();
+
+	if (chunks.empty())
+		output.drain_cond.notify_one();
+
+	return chunk;
+}
+
+void
 SnapcastClient::OnSocketReady(unsigned flags) noexcept
 {
-	if (flags & SocketEvent::WRITE)
-		// TODO
-		{}
+	if (flags & SocketEvent::WRITE) {
+		constexpr auto max_age = std::chrono::milliseconds(500);
+		const auto min_time = GetEventLoop().SteadyNow() - max_age;
+
+		while (auto chunk = LockPopQueue()) {
+			if (chunk->time < min_time)
+				/* discard old chunks */
+				continue;
+
+			const ConstBuffer<std::byte> payload = chunk->payload;
+			if (!SendWireChunk(payload.ToVoid(), chunk->time)) {
+				// TODO: handle EAGAIN
+				LockClose();
+				return;
+			}
+		}
+
+		event.CancelWrite();
+	}
 
 	BufferedSocket::OnSocketReady(flags);
 }
@@ -146,7 +189,8 @@ SendTime(SocketDescriptor s, const PackedBE16 id,
 	 const SnapcastBase &request_header,
 	 const SnapcastTime &request_payload) noexcept
 {
-	SnapcastTime payload = request_payload; // TODO
+	SnapcastTime payload = request_payload;
+	payload.latency = request_header.received - request_header.sent;
 
 	SnapcastBase base{};
 	base.type = uint16_t(SnapcastMessageType::TIME);
@@ -185,22 +229,44 @@ SendWireChunk(SocketDescriptor s, const PackedBE16 id,
 	return SendT(s, base) && SendT(s, hdr) && Send(s, payload);
 }
 
-void
+bool
 SnapcastClient::SendWireChunk(ConstBuffer<void> payload,
 			      std::chrono::steady_clock::time_point t) noexcept
 {
-	if (active)
-		::SendWireChunk(GetSocket(), next_id++, payload, t);
+	return ::SendWireChunk(GetSocket(), next_id++, payload, t);
+}
+
+static bool
+SendStreamTags(SocketDescriptor s, const PackedBE16 id,
+	       const ConstBuffer<void> payload) noexcept
+{
+	const PackedLE32 payload_size = payload.size;
+
+	SnapcastBase base{};
+	base.type = uint16_t(SnapcastMessageType::STREAM_TAGS);
+	base.id = id;
+	base.sent = ToSnapcastTimestamp(std::chrono::steady_clock::now());
+	base.size = sizeof(payload_size) + payload.size;
+
+	return SendT(s, base) && SendT(s, payload_size) && Send(s, payload);
+}
+
+void
+SnapcastClient::SendStreamTags(ConstBuffer<void> payload) noexcept
+{
+	::SendStreamTags(GetSocket(), next_id++, payload);
 }
 
 BufferedSocket::InputResult
 SnapcastClient::OnSocketInput(void *data, size_t length) noexcept
 {
-	const auto &base = *(const SnapcastBase *)data;
+	auto &base = *(SnapcastBase *)data;
 
 	if (length < sizeof(base) ||
 	    length < sizeof(base) + base.size)
 		return InputResult::MORE;
+
+	base.received = ToSnapcastTimestamp(GetEventLoop().SteadyNow());
 
 	ConsumeInput(sizeof(base) + base.size);
 
@@ -218,7 +284,6 @@ SnapcastClient::OnSocketInput(void *data, size_t length) noexcept
 		break;
 
 	case SnapcastMessageType::TIME:
-		// TODO: implement this properly
 		if (payload.size >= sizeof(SnapcastTime))
 			SendTime(base, *(const SnapcastTime *)payload.data);
 		break;

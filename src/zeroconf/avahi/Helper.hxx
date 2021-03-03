@@ -17,25 +17,28 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "event/Loop.hxx"
-#include "ShutdownHandler.hxx"
-#include "zeroconf/ZeroconfAvahi.hxx"
+#ifndef MPD_ZEROCONF_AVAHI_HELPER_HXX
+#define MPD_ZEROCONF_AVAHI_HELPER_HXX
 
-#include <stdlib.h>
+#include <memory>
 
-unsigned listen_port = 1234;
+class EventLoop;
+namespace Avahi { class Publisher; }
 
-int
-main([[maybe_unused]] int argc, [[maybe_unused]] char **argv)
-{
-	EventLoop event_loop;
-	const ShutdownHandler shutdown_handler(event_loop);
+class SharedAvahiClient;
 
-	AvahiInit(event_loop, "test");
+class AvahiHelper final {
+	std::shared_ptr<SharedAvahiClient> client;
+	std::unique_ptr<Avahi::Publisher> publisher;
 
-	event_loop.Run();
+public:
+	AvahiHelper(std::shared_ptr<SharedAvahiClient> _client,
+		    std::unique_ptr<Avahi::Publisher> _publisher);
+	~AvahiHelper() noexcept;
+};
 
-	AvahiDeinit();
+std::unique_ptr<AvahiHelper>
+AvahiInit(EventLoop &event_loop, const char *service_name,
+	  const char *service_type, unsigned port);
 
-	return EXIT_SUCCESS;
-}
+#endif

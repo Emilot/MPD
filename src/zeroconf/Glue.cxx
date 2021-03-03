@@ -17,15 +17,22 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "ZeroconfGlue.hxx"
-#include "ZeroconfAvahi.hxx"
-#include "ZeroconfBonjour.hxx"
+#include "Glue.hxx"
+#include "Helper.hxx"
 #include "config/Data.hxx"
 #include "config/Option.hxx"
 #include "Listen.hxx"
 #include "util/Domain.hxx"
 #include "Log.hxx"
 #include "util/Compiler.h"
+
+#ifdef HAVE_AVAHI
+#include "avahi/Helper.hxx"
+#endif
+
+#ifdef HAVE_BONJOUR
+#include "Bonjour.hxx"
+#endif
 
 #include <climits>
 
@@ -45,25 +52,24 @@ static constexpr Domain zeroconf_domain("zeroconf");
  */
 #define SERVICE_NAME		"Music Player @ %h"
 
+/* The dns-sd service type qualifier to publish */
+#define SERVICE_TYPE		"_mpd._tcp"
+
 #define DEFAULT_ZEROCONF_ENABLED 1
 
-static int zeroconfEnabled;
-
-void
+std::unique_ptr<ZeroconfHelper>
 ZeroconfInit(const ConfigData &config, [[maybe_unused]] EventLoop &loop)
 {
 	const char *serviceName;
 
-	zeroconfEnabled = config.GetBool(ConfigOption::ZEROCONF_ENABLED,
-					 DEFAULT_ZEROCONF_ENABLED);
-	if (!zeroconfEnabled)
-		return;
+	if (!config.GetBool(ConfigOption::ZEROCONF_ENABLED,
+			    DEFAULT_ZEROCONF_ENABLED))
+		return nullptr;
 
 	if (listen_port <= 0) {
 		LogWarning(zeroconf_domain,
 			   "No global port, disabling zeroconf");
-		zeroconfEnabled = false;
-		return;
+		return nullptr;
 	}
 
 	serviceName = config.GetString(ConfigOption::ZEROCONF_NAME,
@@ -81,26 +87,6 @@ ZeroconfInit(const ConfigData &config, [[maybe_unused]] EventLoop &loop)
 		}
 	}
 
-#ifdef HAVE_AVAHI
-	AvahiInit(loop, serviceName);
-#endif
-
-#ifdef HAVE_BONJOUR
-	BonjourInit(loop, serviceName);
-#endif
-}
-
-void
-ZeroconfDeinit()
-{
-	if (!zeroconfEnabled)
-		return;
-
-#ifdef HAVE_AVAHI
-	AvahiDeinit();
-#endif /* HAVE_AVAHI */
-
-#ifdef HAVE_BONJOUR
-	BonjourDeinit();
-#endif
+	return std::make_unique<ZeroconfHelper>(loop, serviceName,
+						SERVICE_TYPE, listen_port);
 }

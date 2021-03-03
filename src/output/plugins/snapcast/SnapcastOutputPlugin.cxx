@@ -21,6 +21,7 @@
 #include "Internal.hxx"
 #include "Client.hxx"
 #include "output/OutputAPI.hxx"
+#include "output/Features.h"
 #include "encoder/EncoderInterface.hxx"
 #include "encoder/Configured.hxx"
 #include "encoder/plugins/WaveEncoderPlugin.hxx"
@@ -31,6 +32,14 @@
 #include "util/DeleteDisposer.hxx"
 #include "config/Net.hxx"
 
+#ifdef HAVE_ZEROCONF
+#include "zeroconf/Helper.hxx"
+#endif
+
+#ifdef HAVE_YAJL
+#include "lib/yajl/Gen.hxx"
+#endif
+
 #include <cassert>
 
 #include <string.h>
@@ -40,11 +49,18 @@ SnapcastOutput::SnapcastOutput(EventLoop &_loop, const ConfigBlock &block)
 	:AudioOutput(FLAG_ENABLE_DISABLE|FLAG_PAUSE|
 		     FLAG_NEED_FULLY_DEFINED_AUDIO_FORMAT),
 	 ServerSocket(_loop),
+	 inject_event(_loop, BIND_THIS_METHOD(OnInject)),
 	 // TODO: support other encoder plugins?
 	 prepared_encoder(encoder_init(wave_encoder_plugin, block))
 {
+	const unsigned port = block.GetBlockValue("port", 1704U);
 	ServerSocketAddGeneric(*this, block.GetBlockValue("bind_to_address"),
-			       block.GetBlockValue("port", 1704U));
+			       port);
+
+#ifdef HAVE_ZEROCONF
+	if (block.GetBlockValue("zeroconf", true))
+		zeroconf_port = port;
+#endif
 }
 
 SnapcastOutput::~SnapcastOutput() noexcept = default;
@@ -56,9 +72,14 @@ SnapcastOutput::Bind()
 
 	BlockingCall(GetEventLoop(), [this](){
 		ServerSocket::Open();
-	});
 
-	// TODO: Zeroconf integration
+#ifdef HAVE_ZEROCONF
+		if (zeroconf_port > 0)
+			zeroconf_helper = std::make_unique<ZeroconfHelper>
+				(GetEventLoop(), "Music Player Daemon",
+				 "_snapcast._tcp", zeroconf_port);
+#endif
+	});
 }
 
 inline void
@@ -67,6 +88,10 @@ SnapcastOutput::Unbind() noexcept
 	assert(!open);
 
 	BlockingCall(GetEventLoop(), [this](){
+#ifdef HAVE_ZEROCONF
+		zeroconf_helper.reset();
+#endif
+
 		ServerSocket::Close();
 	});
 }
@@ -146,13 +171,31 @@ SnapcastOutput::Close() noexcept
 	delete timer;
 
 	BlockingCall(GetEventLoop(), [this](){
+		inject_event.Cancel();
+
 		const std::lock_guard<Mutex> protect(mutex);
 		open = false;
 		clients.clear_and_dispose(DeleteDisposer{});
 	});
 
+	ClearQueue(chunks);
+
 	codec_header = nullptr;
 	delete encoder;
+}
+
+void
+SnapcastOutput::OnInject() noexcept
+{
+	const std::lock_guard<Mutex> protect(mutex);
+
+	while (!chunks.empty()) {
+		const auto chunk = std::move(chunks.front());
+		chunks.pop();
+
+		for (auto &client : clients)
+			client.Push(chunk);
+	}
 }
 
 void
@@ -162,6 +205,9 @@ SnapcastOutput::RemoveClient(SnapcastClient &client) noexcept
 
 	client.unlink();
 	delete &client;
+
+	if (clients.empty())
+		drain_cond.notify_one();
 }
 
 std::chrono::steady_clock::duration
@@ -185,15 +231,77 @@ SnapcastOutput::Delay() const noexcept
 		: std::chrono::steady_clock::duration::zero();
 }
 
-inline void
-SnapcastOutput::BroadcastWireChunk(ConstBuffer<void> payload,
-				   std::chrono::steady_clock::time_point t) noexcept
-{
-	const std::lock_guard<Mutex> protect(mutex);
+#ifdef HAVE_YAJL
 
-	// TODO: no blocking send(), enqueue chunks, send() in I/O thread
+static constexpr struct {
+	TagType type;
+	const char *name;
+} snapcast_tags[] = {
+	/* these tags are mentioned in an example in
+	   snapcast/common/message/stream_tags.hpp */
+	{ TAG_ARTIST, "artist" },
+	{ TAG_ALBUM, "album" },
+	{ TAG_TITLE, "track" },
+	{ TAG_MUSICBRAINZ_TRACKID, "musicbrainzid" },
+};
+
+static bool
+TranslateTagType(Yajl::Gen &gen, const Tag &tag, TagType type,
+		 const char *name) noexcept
+{
+	// TODO: support multiple values?
+	const char *value = tag.GetValue(type);
+	if (value == nullptr)
+		return false;
+
+	gen.String(name);
+	gen.String(value);
+	return true;
+}
+
+static std::string
+ToJson(const Tag &tag) noexcept
+{
+	Yajl::Gen gen(nullptr);
+	gen.OpenMap();
+
+	bool empty = true;
+
+	for (const auto [type, name] : snapcast_tags)
+		if (TranslateTagType(gen, tag, type, name))
+			empty = false;
+
+	if (empty)
+		return {};
+
+	gen.CloseMap();
+
+	const auto result = gen.GetBuffer();
+	return {(const char *)result.data, result.size};
+}
+
+#endif
+
+void
+SnapcastOutput::SendTag(const Tag &tag)
+{
+#ifdef HAVE_YAJL
+	if (!LockHasClients())
+		return;
+
+	const auto json = ToJson(tag);
+	if (json.empty())
+		return;
+
+	const ConstBuffer payload(json.data(), json.size());
+
+	const std::lock_guard<Mutex> protect(mutex);
+	// TODO: enqueue StreamTags, don't send directly
 	for (auto &client : clients)
-		client.SendWireChunk(payload, t);
+		client.SendStreamTags(payload.ToVoid());
+#else
+	(void)tag;
+#endif
 }
 
 size_t
@@ -233,7 +341,12 @@ SnapcastOutput::Play(const void *chunk, size_t size)
 		if (nbytes == 0)
 			break;
 
-		BroadcastWireChunk({buffer, nbytes}, now);
+		const std::lock_guard<Mutex> protect(mutex);
+		if (chunks.empty())
+			inject_event.Schedule();
+
+		const ConstBuffer payload{buffer, nbytes};
+		chunks.emplace(std::make_shared<SnapcastChunk>(now, AllocatedArray{payload}));
 	}
 
 	return size;
@@ -248,10 +361,35 @@ SnapcastOutput::Pause()
 	return true;
 }
 
+inline bool
+SnapcastOutput::IsDrained() const noexcept
+{
+	if (!chunks.empty())
+		return false;
+
+	for (const auto &client : clients)
+		if (!client.IsDrained())
+			return false;
+
+	return true;
+}
+
+void
+SnapcastOutput::Drain()
+{
+	std::unique_lock<Mutex> protect(mutex);
+	drain_cond.wait(protect, [this]{ return IsDrained(); });
+}
+
 void
 SnapcastOutput::Cancel() noexcept
 {
-	// TODO
+	const std::lock_guard<Mutex> protect(mutex);
+
+	ClearQueue(chunks);
+
+	for (auto &client : clients)
+		client.Cancel();
 }
 
 const struct AudioOutputPlugin snapcast_output_plugin = {

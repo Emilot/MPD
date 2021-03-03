@@ -17,32 +17,21 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef MPD_ZEROCONF_GLUE_HXX
-#define MPD_ZEROCONF_GLUE_HXX
+#include "event/Loop.hxx"
+#include "ShutdownHandler.hxx"
+#include "zeroconf/Helper.hxx"
 
-#include "config.h"
+#include <stdlib.h>
 
-struct ConfigData;
-class EventLoop;
+int
+main([[maybe_unused]] int argc, [[maybe_unused]] char **argv)
+{
+	EventLoop event_loop;
+	const ShutdownHandler shutdown_handler(event_loop);
 
-#ifdef HAVE_ZEROCONF
+	const ZeroconfHelper helper(event_loop, "test", "_mpd._tcp", 1234);
 
-void
-ZeroconfInit(const ConfigData &config, EventLoop &loop);
+	event_loop.Run();
 
-void
-ZeroconfDeinit();
-
-#else /* ! HAVE_ZEROCONF */
-
-static inline void
-ZeroconfInit(const ConfigData &, EventLoop &)
-{}
-
-static inline void
-ZeroconfDeinit()
-{}
-
-#endif /* ! HAVE_ZEROCONF */
-
-#endif
+	return EXIT_SUCCESS;
+}

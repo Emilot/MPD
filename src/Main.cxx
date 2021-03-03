@@ -40,10 +40,11 @@
 #include "input/cache/Config.hxx"
 #include "input/cache/Manager.hxx"
 #include "event/Loop.hxx"
+#include "event/Call.hxx"
 #include "fs/AllocatedPath.hxx"
 #include "fs/Config.hxx"
 #include "playlist/PlaylistRegistry.hxx"
-#include "zeroconf/ZeroconfGlue.hxx"
+#include "zeroconf/Glue.hxx"
 #include "decoder/DecoderList.hxx"
 #include "pcm/AudioParser.hxx"
 #include "pcm/Convert.hxx"
@@ -441,7 +442,8 @@ MainConfigured(const struct options &options, const ConfigData &raw_config)
 	command_init();
 
 	for (auto &partition : instance.partitions) {
-		partition.outputs.Configure(instance.rtio_thread.GetEventLoop(),
+		partition.outputs.Configure(instance.io_thread.GetEventLoop(),
+					    instance.rtio_thread.GetEventLoop(),
 					    raw_config,
 					    config.replay_gain);
 		partition.UpdateEffectiveReplayGainMode();
@@ -476,7 +478,18 @@ MainConfigured(const struct options &options, const ConfigData &raw_config)
 	};
 #endif
 
-	ZeroconfInit(raw_config, instance.event_loop);
+#ifdef HAVE_ZEROCONF
+	std::unique_ptr<ZeroconfHelper> zeroconf;
+	try {
+		auto &event_loop = instance.io_thread.GetEventLoop();
+		BlockingCall(event_loop, [&](){
+			zeroconf = ZeroconfInit(raw_config, event_loop);
+		});
+	} catch (...) {
+		LogError(std::current_exception(),
+			 "Zeroconf initialization failed");
+	}
+#endif
 
 #ifdef ENABLE_DATABASE
 	if (create_db) {
@@ -538,7 +551,14 @@ MainConfigured(const struct options &options, const ConfigData &raw_config)
 
 	instance.BeginShutdownUpdate();
 
-	ZeroconfDeinit();
+#ifdef HAVE_ZEROCONF
+	if (zeroconf) {
+		auto &event_loop = instance.io_thread.GetEventLoop();
+		BlockingCall(event_loop, [&](){
+			zeroconf.reset();
+		});
+	}
+#endif
 
 	instance.BeginShutdownPartitions();
 }
