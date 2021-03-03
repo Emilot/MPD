@@ -210,7 +210,7 @@ dvdaiso_init(const ConfigBlock& block) {
 	}
 	param_tags_path = block.GetBlockValue("tags_path", "");
 	param_tags_with_iso = block.GetBlockValue("tags_with_iso", false);
-	param_use_stdio = block.GetBlockValue("use_stdio", false);
+	param_use_stdio = block.GetBlockValue("use_stdio", true);
 	return true;
 }
 
