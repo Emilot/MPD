@@ -12,15 +12,15 @@ endif
 
 if get_option('dsd') and not get_option('sacdiso')
   decoder_plugins_sources += [
-    'DsdiffDecoderPlugin.cxx',
-  ]
+		'DsdiffDecoderPlugin.cxx',
+]
 endif
 
 if get_option('sacdiso')
   decoder_plugins_sources += [
     'DffDecoderPlugin.cxx',
-	'SacdIsoDecoderPlugin.cxx',
-  ]
+		'SacdIsoDecoderPlugin.cxx',
+]
 endif
 
 if get_option('dvdaiso')
