@@ -32,54 +32,18 @@
 
 #pragma once
 
-#include "Chrono.hxx"
-#include "event/Features.h"
-#include "util/IntrusiveList.hxx"
+#include <avahi-client/publish.h>
 
-#ifndef NO_BOOST
-#include <boost/intrusive/set.hpp>
-#endif
+#include <memory>
 
-class FineTimerEvent;
+namespace Avahi {
 
-/**
- * A list of #FineTimerEvent instances sorted by due time point.
- */
-class TimerList final {
-	struct Compare {
-		constexpr bool operator()(const FineTimerEvent &a,
-					  const FineTimerEvent &b) const noexcept;
-	};
-
-#ifdef NO_BOOST
-	/* when building without Boost, then this is just a sorted
-	   doubly-linked list - this doesn't scale well, but is good
-	   enough for most programs */
-	IntrusiveList<FineTimerEvent> timers;
-#else
-	boost::intrusive::multiset<FineTimerEvent,
-				   boost::intrusive::base_hook<boost::intrusive::set_base_hook<boost::intrusive::link_mode<boost::intrusive::auto_unlink>>>,
-				   boost::intrusive::compare<Compare>,
-				   boost::intrusive::constant_time_size<false>> timers;
-#endif
-
-public:
-	TimerList();
-	~TimerList() noexcept;
-
-	TimerList(const TimerList &other) = delete;
-	TimerList &operator=(const TimerList &other) = delete;
-
-	bool IsEmpty() const noexcept {
-		return timers.empty();
+struct EntryGroupDeleter {
+	void operator()(AvahiEntryGroup *g) noexcept {
+		avahi_entry_group_free(g);
 	}
-
-	void Insert(FineTimerEvent &t) noexcept;
-
-	/**
-	 * Invoke all expired #FineTimerEvent instances and return the
-	 * duration until the next timer expires.  Returns a negative
-	 * duration if there is no timeout.
-	 */
-	Event::Duration Run(Event::TimePoint now) noexcept;
 };
+
+using EntryGroupPtr = std::unique_ptr<AvahiEntryGroup, EntryGroupDeleter>;
+
+} // namespace Avahi

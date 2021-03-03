@@ -20,12 +20,17 @@
 #ifndef MPD_OUTPUT_SNAPCAST_INTERNAL_HXX
 #define MPD_OUTPUT_SNAPCAST_INTERNAL_HXX
 
+#include "Chunk.hxx"
 #include "output/Interface.hxx"
 #include "output/Timer.hxx"
 #include "thread/Mutex.hxx"
+#include "thread/Cond.hxx"
 #include "event/ServerSocket.hxx"
+#include "event/InjectEvent.hxx"
 #include "util/AllocatedArray.hxx"
 #include "util/IntrusiveList.hxx"
+
+#include "config.h" // for HAVE_ZEROCONF
 
 #include <memory>
 
@@ -33,13 +38,24 @@ struct ConfigBlock;
 class SnapcastClient;
 class PreparedEncoder;
 class Encoder;
+class ZeroconfHelper;
 
 class SnapcastOutput final : AudioOutput, ServerSocket {
+#ifdef HAVE_ZEROCONF
+	unsigned zeroconf_port = 0;
+#endif
+
 	/**
 	 * True if the audio output is open and accepts client
 	 * connections.
 	 */
 	bool open;
+
+	InjectEvent inject_event;
+
+#ifdef HAVE_ZEROCONF
+	std::unique_ptr<ZeroconfHelper> zeroconf_helper;
+#endif
 
 	/**
 	 * The configured encoder plugin.
@@ -69,12 +85,20 @@ class SnapcastOutput final : AudioOutput, ServerSocket {
 	 */
 	IntrusiveList<SnapcastClient> clients;
 
+	SnapcastChunkQueue chunks;
+
 public:
 	/**
-	 * This mutex protects the listener socket and the client
-	 * list.
+	 * This mutex protects the listener socket, the #clients list
+	 * and the #chunks queue.
 	 */
 	mutable Mutex mutex;
+
+	/**
+	 * This cond is signalled when a #SnapcastClient has an empty
+	 * queue.
+	 */
+	Cond drain_cond;
 
 	SnapcastOutput(EventLoop &_loop, const ConfigBlock &block);
 	~SnapcastOutput() noexcept override;
@@ -152,17 +176,22 @@ public:
 
 	std::chrono::steady_clock::duration Delay() const noexcept override;
 
-	// TODO: void SendTag(const Tag &tag) override;
+	void SendTag(const Tag &tag) override;
 
 	size_t Play(const void *chunk, size_t size) override;
 
-	// TODO: void Drain() override;
+	void Drain() override;
 	void Cancel() noexcept override;
 	bool Pause() override;
 
 private:
-	void BroadcastWireChunk(ConstBuffer<void> payload,
-				std::chrono::steady_clock::time_point t) noexcept;
+	void OnInject() noexcept;
+
+	/**
+	 * Caller must lock the mutex.
+	 */
+	[[gnu::pure]]
+	bool IsDrained() const noexcept;
 
 	/* virtual methods from class ServerSocket */
 	void OnAccept(UniqueSocketDescriptor fd,

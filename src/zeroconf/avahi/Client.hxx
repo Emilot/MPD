@@ -32,54 +32,62 @@
 
 #pragma once
 
-#include "Chrono.hxx"
-#include "event/Features.h"
-#include "util/IntrusiveList.hxx"
+#include "Poll.hxx"
+#include "event/CoarseTimerEvent.hxx"
 
-#ifndef NO_BOOST
-#include <boost/intrusive/set.hpp>
-#endif
+#include <avahi-client/client.h>
 
-class FineTimerEvent;
+#include <forward_list>
 
-/**
- * A list of #FineTimerEvent instances sorted by due time point.
- */
-class TimerList final {
-	struct Compare {
-		constexpr bool operator()(const FineTimerEvent &a,
-					  const FineTimerEvent &b) const noexcept;
-	};
+class EventLoop;
 
-#ifdef NO_BOOST
-	/* when building without Boost, then this is just a sorted
-	   doubly-linked list - this doesn't scale well, but is good
-	   enough for most programs */
-	IntrusiveList<FineTimerEvent> timers;
-#else
-	boost::intrusive::multiset<FineTimerEvent,
-				   boost::intrusive::base_hook<boost::intrusive::set_base_hook<boost::intrusive::link_mode<boost::intrusive::auto_unlink>>>,
-				   boost::intrusive::compare<Compare>,
-				   boost::intrusive::constant_time_size<false>> timers;
-#endif
+namespace Avahi {
+
+class ErrorHandler;
+class ConnectionListener;
+
+class Client final {
+	ErrorHandler &error_handler;
+
+	CoarseTimerEvent reconnect_timer;
+
+	Poll poll;
+
+	AvahiClient *client = nullptr;
+
+	std::forward_list<ConnectionListener *> listeners;
 
 public:
-	TimerList();
-	~TimerList() noexcept;
+	Client(EventLoop &event_loop, ErrorHandler &_error_handler) noexcept;
+	~Client() noexcept;
 
-	TimerList(const TimerList &other) = delete;
-	TimerList &operator=(const TimerList &other) = delete;
+	Client(const Client &) = delete;
+	Client &operator=(const Client &) = delete;
 
-	bool IsEmpty() const noexcept {
-		return timers.empty();
+	EventLoop &GetEventLoop() const noexcept {
+		return poll.GetEventLoop();
 	}
 
-	void Insert(FineTimerEvent &t) noexcept;
+	void Close() noexcept;
 
-	/**
-	 * Invoke all expired #FineTimerEvent instances and return the
-	 * duration until the next timer expires.  Returns a negative
-	 * duration if there is no timeout.
-	 */
-	Event::Duration Run(Event::TimePoint now) noexcept;
+	AvahiClient *GetClient() noexcept {
+		return client;
+	}
+
+	void AddListener(ConnectionListener &listener) noexcept {
+		listeners.push_front(&listener);
+	}
+
+	void RemoveListener(ConnectionListener &listener) noexcept {
+		listeners.remove(&listener);
+	}
+
+private:
+	void ClientCallback(AvahiClient *c, AvahiClientState state) noexcept;
+	static void ClientCallback(AvahiClient *c, AvahiClientState state,
+				   void *userdata) noexcept;
+
+	void OnReconnectTimer() noexcept;
 };
+
+} // namespace Avahi

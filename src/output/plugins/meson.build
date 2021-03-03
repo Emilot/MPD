@@ -85,6 +85,10 @@ if enable_pipe_output
   output_plugins_sources += 'PipeOutputPlugin.cxx'
 endif
 
+if pipewire_dep.found()
+  output_plugins_sources += 'PipeWireOutputPlugin.cxx'
+endif
+
 if pulse_dep.found()
   output_plugins_sources += 'PulseOutputPlugin.cxx'
 endif
@@ -119,7 +123,9 @@ if get_option('snapcast')
     'snapcast/SnapcastOutputPlugin.cxx',
     'snapcast/Client.cxx',
   ]
-  output_plugins_deps += [ event_dep, net_dep ]
+  output_plugins_deps += [ event_dep, net_dep, yajl_dep, zeroconf_dep ]
+
+  output_features.set('HAVE_YAJL', yajl_dep.found())
 
   # TODO: the Snapcast plugin needs just the "wave" encoder, but this
   # enables all available encoders
@@ -167,6 +173,7 @@ output_plugins = static_library(
     apple_dep,
     libao_dep,
     libjack_dep,
+    pipewire_dep,
     pulse_dep,
     libshout_dep,
     libsndio_dep,

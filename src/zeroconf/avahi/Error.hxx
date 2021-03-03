@@ -32,54 +32,30 @@
 
 #pragma once
 
-#include "Chrono.hxx"
-#include "event/Features.h"
-#include "util/IntrusiveList.hxx"
+#include <system_error>
 
-#ifndef NO_BOOST
-#include <boost/intrusive/set.hpp>
-#endif
+struct AvahiClient;
 
-class FineTimerEvent;
+namespace Avahi {
 
-/**
- * A list of #FineTimerEvent instances sorted by due time point.
- */
-class TimerList final {
-	struct Compare {
-		constexpr bool operator()(const FineTimerEvent &a,
-					  const FineTimerEvent &b) const noexcept;
-	};
-
-#ifdef NO_BOOST
-	/* when building without Boost, then this is just a sorted
-	   doubly-linked list - this doesn't scale well, but is good
-	   enough for most programs */
-	IntrusiveList<FineTimerEvent> timers;
-#else
-	boost::intrusive::multiset<FineTimerEvent,
-				   boost::intrusive::base_hook<boost::intrusive::set_base_hook<boost::intrusive::link_mode<boost::intrusive::auto_unlink>>>,
-				   boost::intrusive::compare<Compare>,
-				   boost::intrusive::constant_time_size<false>> timers;
-#endif
-
+class ErrorCategory final : public std::error_category {
 public:
-	TimerList();
-	~TimerList() noexcept;
-
-	TimerList(const TimerList &other) = delete;
-	TimerList &operator=(const TimerList &other) = delete;
-
-	bool IsEmpty() const noexcept {
-		return timers.empty();
+	const char *name() const noexcept override {
+		return "avahi-client";
 	}
 
-	void Insert(FineTimerEvent &t) noexcept;
-
-	/**
-	 * Invoke all expired #FineTimerEvent instances and return the
-	 * duration until the next timer expires.  Returns a negative
-	 * duration if there is no timeout.
-	 */
-	Event::Duration Run(Event::TimePoint now) noexcept;
+	std::string message(int condition) const override;
 };
+
+extern ErrorCategory error_category;
+
+inline std::system_error
+MakeError(int error, const char *msg) noexcept
+{
+	return std::system_error(error, error_category, msg);
+}
+
+std::system_error
+MakeError(AvahiClient &client, const char *msg) noexcept;
+
+} // namespace Avahi

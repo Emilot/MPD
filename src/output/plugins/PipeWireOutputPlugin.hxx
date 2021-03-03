@@ -17,10 +17,9 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef ZEROCONF_INTERNAL_H
-#define ZEROCONF_INTERNAL_H
+#ifndef MPD_PIPEWIRE_OUTPUT_PLUGIN_HXX
+#define MPD_PIPEWIRE_OUTPUT_PLUGIN_HXX
 
-/* The dns-sd service type qualifier to publish */
-#define SERVICE_TYPE		"_mpd._tcp"
+extern const struct AudioOutputPlugin pipewire_output_plugin;
 
 #endif

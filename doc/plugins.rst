@@ -1054,6 +1054,21 @@ The pipe plugin starts a program and writes raw PCM data into its standard input
    * - **command CMD**
      - This command is invoked with the shell.
 
+pipewire
+--------
+
+Connect to a `PipeWire <https://pipewire.org/>``_ server.  Requires
+``libpipewire``.
+
+.. list-table::
+   :widths: 20 80
+   :header-rows: 1
+
+   * - Setting
+     - Description
+   * - **target ID**
+     - Link to the given target id.
+
 .. _pulse_plugin:
 
 pulse
@@ -1167,6 +1182,9 @@ connect to it and receive audio data from MPD.
      - Binds the Snapcast server to the specified address.  Multiple
        addresses in parallel are not supported.  The default is to
        bind on all addresses on port :samp:`1704`.
+   * - **zeroconf yes|no**
+     - Publish the Snapcast server as service type ``_snapcast._tcp``
+       via Zeroconf (Avahi or Bonjour).  Default is :samp:`yes`.
 
 
 solaris

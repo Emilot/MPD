@@ -381,6 +381,7 @@ subdir('src/lib/gcrypt')
 subdir('src/lib/nfs')
 subdir('src/lib/oss')
 subdir('src/lib/pcre')
+subdir('src/lib/pipewire')
 subdir('src/lib/pulse')
 subdir('src/lib/sndio')
 subdir('src/lib/sqlite')
@@ -389,6 +390,8 @@ subdir('src/lib/upnp')
 subdir('src/lib/yajl')
 
 subdir('src/lib/crypto')
+
+subdir('src/zeroconf')
 
 subdir('src/fs')
 subdir('src/config')
@@ -405,7 +408,6 @@ subdir('src/decoder')
 subdir('src/encoder')
 subdir('src/song')
 subdir('src/playlist')
-subdir('src/zeroconf')
 
 if enable_sacdiso
   subdir('src/lib/sacdiso')
