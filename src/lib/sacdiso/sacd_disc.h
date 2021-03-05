@@ -58,7 +58,6 @@ private:
 	bool                 is_dst_encoded;
 	audio_sector_t       audio_sector;
 	audio_frame_t        frame;
-	int                  frame_info_counter;
 	int                  packet_info_idx;
 	uint8_t              sector_buffer[SACD_PSN_SIZE];
 	uint32_t             sector_size;

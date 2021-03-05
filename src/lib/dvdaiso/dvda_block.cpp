@@ -1,6 +1,6 @@
 /*
 * DVD-Audio Decoder plugin
-* Copyright (c) 2009 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2009-2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * DVD-Audio Decoder is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -55,7 +55,7 @@ void dvda_block_t::get_ps1(uint8_t* p_block, uint8_t* p_ps1_buffer, int* p_ps1_o
 						if (p_ps1_header < p_ps1_end && p_ps1_end <= p_block + DVD_BLOCK_SIZE) {
 							int ps1_header_length = get_ps1_info_length(p_ps1_header, p_ps1_end - p_ps1_header);
 							if (p_ps1_info && p_ps1_info->header.stream_id == UNK_STREAM_ID && ps1_header_length > 0)
-								memcpy(p_ps1_info, p_ps1_header, ps1_header_length < sizeof(sub_header_t) ? ps1_header_length : sizeof(sub_header_t));
+								memcpy(p_ps1_info, p_ps1_header, (size_t)ps1_header_length < sizeof(sub_header_t) ? ps1_header_length : sizeof(sub_header_t));
 							p_ps1_body = p_ps1_header + ps1_header_length;
 							int ps1_body_length = p_ps1_end - p_ps1_body;
 							if (ps1_body_length > 0) {

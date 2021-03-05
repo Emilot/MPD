@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003-2020 The Music Player Daemon Project
+ * Copyright (C) 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -46,28 +46,31 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <memory>
 #include <vector>
-
-static const char* SACD_TRACKXXX_FMT = "%cC_AUDIO__TRACK%03u.%3s";
 
 static constexpr Domain sacdiso_domain("sacdiso");
 
-static unsigned    param_dstdec_threads;
-static bool        param_edited_master;
-static bool        param_lsbitfirst;
-static area_id_e   param_playable_area;
-static std::string param_tags_path;
-static bool        param_tags_with_iso;
-static bool        param_use_stdio;
+namespace sacdiso {
 
-static std::string      sacd_uri;
-static sacd_media_t*    sacd_media    = nullptr;
-static sacd_reader_t*   sacd_reader   = nullptr;
-static sacd_metabase_t* sacd_metabase = nullptr;
+constexpr const char* SACD_TRACKXXX_FMT{ "%cC_AUDIO__TRACK%03u.%3s" };
+
+unsigned    param_dstdec_threads;
+bool        param_edited_master;
+bool        param_lsbitfirst;
+area_id_e   param_playable_area;
+std::string param_tags_path;
+bool        param_tags_with_iso;
+bool        param_use_stdio;
+
+std::string                      sacd_uri;
+std::unique_ptr<sacd_media_t>    sacd_media;
+std::unique_ptr<sacd_reader_t>   sacd_reader;
+std::unique_ptr<sacd_metabase_t> sacd_metabase;
 
 static unsigned
 get_container_path_length(const char* path) {
-	string container_path = path;
+	std::string container_path = path;
 	container_path.resize(strrchr(container_path.c_str(), '/') - container_path.c_str());
 	return container_path.length();
 }
@@ -105,7 +108,7 @@ get_subsong(const char* path) {
 }
 
 static bool
-sacdiso_update_toc(const char* path) {
+update_toc(const char* path) {
 	std::string curr_uri = path;
 	if (path != nullptr) {
 		if (!sacd_uri.compare(curr_uri)) {
@@ -117,33 +120,30 @@ sacdiso_update_toc(const char* path) {
 			return true;
 		}
 	}
-	if (sacd_reader != nullptr) {
+	if (sacd_reader) {
 		sacd_reader->close();
-		delete sacd_reader;
-		sacd_reader = nullptr;
+		sacd_reader.reset();
 	}
-	if (sacd_media != nullptr) {
+	if (sacd_media) {
 		sacd_media->close();
-		delete sacd_media;
-		sacd_media = nullptr;
+		sacd_media.reset();
 	}
-	if (sacd_metabase != nullptr) {
-		delete sacd_metabase;
-		sacd_metabase = nullptr;
+	if (sacd_metabase) {
+		sacd_metabase.reset();
 	}
 	if (path != nullptr) {
 		if (param_use_stdio) {
-			sacd_media = new sacd_media_file_t();
+			sacd_media = std::make_unique<sacd_media_file_t>();
 		}
 		else {
-			sacd_media = new sacd_media_stream_t();
+			sacd_media = std::make_unique<sacd_media_stream_t>();
 		}
 		if (!sacd_media) {
 			LogError(sacdiso_domain, "new sacd_media_t() failed");
 			sacd_uri.clear();
 			return false;
 		}
-		sacd_reader = new sacd_disc_t;
+		sacd_reader = std::make_unique<sacd_disc_t>();
 		if (!sacd_reader) {
 			LogError(sacdiso_domain, "new sacd_disc_t() failed");
 			sacd_uri.clear();
@@ -158,7 +158,7 @@ sacdiso_update_toc(const char* path) {
 			sacd_uri.clear();
 			return false;
 		}
-		if (!sacd_reader->open(sacd_media)) {
+		if (!sacd_reader->open(sacd_media.get())) {
 			//LogWarning(sacdiso_domain, "sacd_reader->open(...) failed");
 			sacd_uri.clear();
 			return false;
@@ -170,7 +170,7 @@ sacdiso_update_toc(const char* path) {
 				tags_file.resize(tags_file.rfind('.') + 1);
 				tags_file.append("xml");
 			}
-			sacd_metabase = new sacd_metabase_t(reinterpret_cast<sacd_disc_t*>(sacd_reader), param_tags_path.empty() ? nullptr : param_tags_path.c_str(), tags_file.empty() ? nullptr : tags_file.c_str());
+			sacd_metabase = std::make_unique<sacd_metabase_t>(reinterpret_cast<sacd_disc_t*>(sacd_reader.get()), param_tags_path.empty() ? nullptr : param_tags_path.c_str(), tags_file.empty() ? nullptr : tags_file.c_str());
 		}
 	}
 	sacd_uri = curr_uri;
@@ -178,8 +178,8 @@ sacdiso_update_toc(const char* path) {
 }
 
 static void
-sacdiso_scan_info(unsigned track, unsigned track_index, TagHandler& handler) {
-	auto tag_value = to_string(track + 1);
+scan_info(unsigned track, unsigned track_index, TagHandler& handler) {
+	auto tag_value = std::to_string(track + 1);
 	handler.OnTag(TAG_TRACK, tag_value.c_str());
 	handler.OnDuration(SongTime::FromS(sacd_reader->get_duration(track)));
 	if (!sacd_metabase || (sacd_metabase && !sacd_metabase->get_track_info(track_index + 1, handler))) {
@@ -193,7 +193,7 @@ sacdiso_scan_info(unsigned track, unsigned track_index, TagHandler& handler) {
 }
 
 static bool
-sacdiso_init(const ConfigBlock& block) {
+init(const ConfigBlock& block) {
 	param_dstdec_threads = block.GetBlockValue("dstdec_threads", thread::hardware_concurrency());
 	param_edited_master  = block.GetBlockValue("edited_master", false);
 	param_lsbitfirst     = block.GetBlockValue("lsbitfirst", false);
@@ -214,14 +214,14 @@ sacdiso_init(const ConfigBlock& block) {
 }
 
 static void
-sacdiso_finish() noexcept {
-	sacdiso_update_toc(nullptr);
+finish() noexcept {
+	update_toc(nullptr);
 }
 
-static forward_list<DetachedSong>
-sacdiso_container_scan(Path path_fs) {
-	forward_list<DetachedSong> list;
-	if (path_fs.IsNull() || !sacdiso_update_toc(path_fs.c_str())) {
+static std::forward_list<DetachedSong>
+container_scan(Path path_fs) {
+	std::forward_list<DetachedSong> list;
+	if (path_fs.IsNull() || !update_toc(path_fs.c_str())) {
 		return list;
 	}
 	TagBuilder tag_builder;
@@ -233,7 +233,7 @@ sacdiso_container_scan(Path path_fs) {
 		sacd_reader->select_area(AREA_TWOCH);
 		for (auto track = 0u; track < twoch_count; track++) {
 			AddTagHandler handler(tag_builder);
-			sacdiso_scan_info(track, track, handler);
+			scan_info(track, track, handler);
 			tail = list.emplace_after(
 				tail,
 				StringFormat<64>(SACD_TRACKXXX_FMT, '2', track + 1, suffix),
@@ -245,7 +245,7 @@ sacdiso_container_scan(Path path_fs) {
 		sacd_reader->select_area(AREA_MULCH);
 		for (auto track = 0u; track < mulch_count; track++) {
 			AddTagHandler handler(tag_builder);
-			sacdiso_scan_info(track, track + twoch_count, handler);
+			scan_info(track, track + twoch_count, handler);
 			tail = list.emplace_after(
 				tail,
 				StringFormat<64>(SACD_TRACKXXX_FMT, 'M', track + 1, suffix),
@@ -264,9 +264,9 @@ bit_reverse_buffer(uint8_t* p, uint8_t* end) {
 }
 
 static void
-sacdiso_file_decode(DecoderClient &client, Path path_fs) {
+file_decode(DecoderClient &client, Path path_fs) {
 	auto path_container = get_container_path(path_fs.c_str());
-	if (!sacdiso_update_toc(path_container.c_str())) {
+	if (!update_toc(path_container.c_str())) {
 		return;
 	}
 	auto track = get_subsong(path_fs.c_str());
@@ -397,12 +397,12 @@ sacdiso_file_decode(DecoderClient &client, Path path_fs) {
 }
 
 static bool
-sacdiso_scan_file(Path path_fs, TagHandler& handler) noexcept {
+scan_file(Path path_fs, TagHandler& handler) noexcept {
 	auto path_container = get_container_path(path_fs.c_str());
 	if (path_container.empty()) {
 		return false;
 	}
-	if (!sacdiso_update_toc(path_container.c_str())) {
+	if (!update_toc(path_container.c_str())) {
 		return false;
 	}
 	auto track_index = get_subsong(path_fs.c_str());
@@ -422,26 +422,28 @@ sacdiso_scan_file(Path path_fs, TagHandler& handler) noexcept {
 			return false;
 		}
 	}
-	sacdiso_scan_info(track, track_index, handler);
+	scan_info(track, track_index, handler);
 	return true;
 }
 
-static const char* const sacdiso_suffixes[] = {
+static const char* const suffixes[] {
 	"dat",
 	"iso",
 	nullptr
 };
 
-static const char* const sacdiso_mime_types[] = {
+static const char* const mime_types[] {
 	"application/x-dat",
 	"application/x-iso",
 	"audio/x-dsd",
 	nullptr
 };
 
+}
+
 constexpr DecoderPlugin sacdiso_decoder_plugin =
-	DecoderPlugin("sacdiso", sacdiso_file_decode, sacdiso_scan_file)
-	.WithInit(sacdiso_init, sacdiso_finish)
-	.WithContainer(sacdiso_container_scan)
-	.WithSuffixes(sacdiso_suffixes)
-	.WithMimeTypes(sacdiso_mime_types);
+	DecoderPlugin("sacdiso", sacdiso::file_decode, sacdiso::scan_file)
+	.WithInit(sacdiso::init, sacdiso::finish)
+	.WithContainer(sacdiso::container_scan)
+	.WithSuffixes(sacdiso::suffixes)
+	.WithMimeTypes(sacdiso::mime_types);

@@ -1,6 +1,6 @@
 ﻿/*
 * MPD SACD Decoder plugin
-* Copyright (c) 2011-2020 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2011-2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * This program is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -30,7 +30,7 @@
 #include "sacd_metabase.h"
 
 static auto utf2xml = [](auto src) {
-	auto dst{ string() };
+	auto dst{ std::string() };
 	for (auto i = 0; src[i] != 0; i++) {
 		if (src[i] == '\r') {
 			dst += "&#13;";
@@ -46,7 +46,7 @@ static auto utf2xml = [](auto src) {
 };
 
 static auto xml2utf = [](auto src) {
-	auto dst{ string() };
+	auto dst{ std::string() };
 	for (auto i = 0; src[i] != 0; i++) {
 		if (strncmp(&src[i], "&#13;", 5) == 0) {
 			dst += "\r";
@@ -57,21 +57,21 @@ static auto xml2utf = [](auto src) {
 			i += 4;
 		}
 		else {
-			dst += string(&src[i], 1);
+			dst += std::string(&src[i], 1);
 		}
 	}
 	return dst;
 };
 
-static string get_md5(sacd_disc_t* p_disc) {
+static std::string get_md5(sacd_disc_t* p_disc) {
 	uint8_t md5_source[MASTER_TOC_LEN * SACD_LSN_SIZE];
-	auto md5_string{ string()};
+	auto md5_string{ std::string()};
 	if (p_disc->read_blocks_raw(START_OF_MASTER_TOC, MASTER_TOC_LEN, md5_source)) {
 		GlobalInitMD5();
 		ConstBuffer<void> md5_hash_buffer;
 		md5_hash_buffer.data = md5_source;
 		md5_hash_buffer.size = sizeof(md5_source);
-		array<uint8_t, 16> md5_hash_array;
+		std::array<uint8_t, 16> md5_hash_array;
 		md5_hash_array = MD5(md5_hash_buffer);
 		for (auto md5_hash_value : md5_hash_array) {
 			char hex_byte[3];
@@ -126,7 +126,7 @@ bool sacd_metabase_t::get_track_info(unsigned track_number, TagHandler& handler)
 	if (!initialized) {
 		return false;
 	}
-	auto node_track {get_node(MB_TAG_TRACK, to_string(track_number).c_str())};
+	auto node_track {get_node(MB_TAG_TRACK, std::to_string(track_number).c_str())};
 	if (!node_track) {
 		return false;
 	}
@@ -137,12 +137,12 @@ bool sacd_metabase_t::get_track_info(unsigned track_number, TagHandler& handler)
 	for (auto tag_index = 0u; tag_index < ixmlNodeList_length(list_tags); tag_index++) {
 		auto node_tag {ixmlNodeList_item(list_tags, tag_index)};
 		if (node_tag) {
-			string node_name {ixmlNode_getNodeName(node_tag)};
+			std::string node_name {ixmlNode_getNodeName(node_tag)};
 			if (node_name == MB_TAG_META) {
 				auto attr_tag {ixmlNode_getAttributes(node_tag)};
 				if (attr_tag) {
-					string tag_name;
-					string tag_value;
+					std::string tag_name;
+					std::string tag_value;
 					auto att_name {ixmlNamedNodeMap_getNamedItem(attr_tag, MB_ATT_NAME)};
 					if (att_name) {
 						tag_name = ixmlNode_getNodeValue(att_name);
@@ -193,7 +193,7 @@ bool sacd_metabase_t::get_albumart(TagHandler& handler) {
 		return false;
 	}
 	auto debase64_size = CalculateBase64OutputSize(strlen(cdata_value));
-	unique_ptr<uint8_t[]> debase64_data;
+	std::unique_ptr<uint8_t[]> debase64_data;
 	debase64_data.reset(new uint8_t[debase64_size]);
 	debase64_size =	DecodeBase64({debase64_data.get(), debase64_size}, cdata_value);
 	handler.OnPicture(nullptr, {debase64_data.get(), debase64_size});
@@ -218,8 +218,8 @@ IXML_Node* sacd_metabase_t::get_node(const char* tag_name, const char* att_id) {
 					auto attr_store {ixmlNode_getAttributes(node_store)};
 					if (attr_store) {
 						IXML_Node* node_attr;
-						string attr_id;
-						string attr_type;
+						std::string attr_id;
+						std::string attr_type;
 						node_attr = ixmlNamedNodeMap_getNamedItem(attr_store, MB_ATT_ID);
 						if (node_attr) {
 							attr_id = ixmlNode_getNodeValue(node_attr);
@@ -241,13 +241,13 @@ IXML_Node* sacd_metabase_t::get_node(const char* tag_name, const char* att_id) {
 		for (auto i = 0u; i < ixmlNodeList_length(list_item); i++) {
 			auto node_item {ixmlNodeList_item(list_item, i)};
 			if (node_item) {
-				string node_name {ixmlNode_getNodeName(node_item)};
+				std::string node_name {ixmlNode_getNodeName(node_item)};
 				if (node_name == tag_name) {
 					auto attr_item {ixmlNode_getAttributes(node_item)};
 					if (attr_item) {
 						auto node_attr {ixmlNamedNodeMap_getNamedItem(attr_item, MB_ATT_ID)};
 						if (node_attr) {
-							string attr_value = ixmlNode_getNodeValue(node_attr);
+							std::string attr_value = ixmlNode_getNodeValue(node_attr);
 							if (attr_value == att_id) {
 								node_item_id = node_item;
 								break;

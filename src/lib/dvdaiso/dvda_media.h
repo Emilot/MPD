@@ -1,6 +1,6 @@
 /*
 * MPD DVD-Audio Decoder plugin
-* Copyright (c) 2014 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * DVD-Audio Decoder is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -29,9 +29,7 @@
 #include "input/InputStream.hxx"
 #include "Log.hxx"
 
-using namespace std;
-
-enum media_type_t {UNK_TYPE = 0, IFO_TYPE = 1, ISO_TYPE = 2, MLP_TYPE = 3, AOB_TYPE = 4};
+enum class media_type_t {UNK_TYPE = 0, IFO_TYPE = 1, ISO_TYPE = 2, MLP_TYPE = 3, AOB_TYPE = 4};
 
 class dvda_media_t {
 public:
@@ -48,7 +46,7 @@ public:
 };
 
 class dvda_media_file_t : public dvda_media_t {
-	string fname;
+        std::string fname;
 	int fd;
 public:
 	dvda_media_file_t();

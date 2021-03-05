@@ -1,6 +1,6 @@
 /*
 * MPD SACD Decoder plugin
-* Copyright (c) 2011-2020 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2011-2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * This program is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -27,8 +27,6 @@
 #include "tag/Tag.hxx"
 #include "sacd_disc.h"
 
-using namespace std;
-
 constexpr char const* MB_TAG_ROOT       = "root";
 constexpr char const* MB_TAG_STORE      = "store";
 constexpr char const* MB_TAG_TRACK      = "track";
@@ -48,10 +46,10 @@ constexpr char const* METABASE_TYPE    = "SACD";
 constexpr char const* METABASE_VERSION = "1.2";
 
 class sacd_metabase_t {
-	string         store_id;
-	string         store_path;
-	string         store_file;
-	string         xmlfile;
+	std::string    store_id;
+	std::string    store_path;
+	std::string    store_file;
+	std::string    xmlfile;
 	IXML_Document* xmldoc;
 	bool           initialized;
 public:

@@ -1,6 +1,6 @@
 /*
 * MPD DVD-Audio Decoder plugin
-* Copyright (c) 2020 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2020-2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * DVD-Audio Decoder is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -30,7 +30,7 @@
 #include "dvda_metabase.h"
 
 static auto utf2xml = [](auto src) {
-	auto dst{ string() };
+	auto dst{ std::string() };
 	for (auto i = 0; src[i] != 0; i++) {
 		if (src[i] == '\r') {
 			dst += "&#13;";
@@ -46,7 +46,7 @@ static auto utf2xml = [](auto src) {
 };
 
 static auto xml2utf = [](auto src) {
-	auto dst{ string() };
+	auto dst{ std::string() };
 	for (auto i = 0; src[i] != 0; i++) {
 		if (strncmp(&src[i], "&#13;", 5) == 0) {
 			dst += "\r";
@@ -57,14 +57,14 @@ static auto xml2utf = [](auto src) {
 			i += 4;
 		}
 		else {
-			dst += string(&src[i], 1);
+			dst += std::string(&src[i], 1);
 		}
 	}
 	return dst;
 };
 
-static string get_md5(dvda_disc_t* p_disc) {
-	auto md5_string{ string()};
+static std::string get_md5(dvda_disc_t* p_disc) {
+	auto md5_string{ std::string()};
 	dvda_fileobject_t* md5_file = p_disc->get_filesystem()->file_open("AUDIO_TS.IFO");
 	if (md5_file) {
 		auto md5_size = (int)md5_file->get_size();
@@ -146,12 +146,12 @@ bool dvda_metabase_t::get_track_info(unsigned track_number, bool downmix, TagHan
 	for (auto tag_index = 0u; tag_index < ixmlNodeList_length(list_tags); tag_index++) {
 		IXML_Node* node_tag {ixmlNodeList_item(list_tags, tag_index)};
 		if (node_tag) {
-			string node_name = ixmlNode_getNodeName(node_tag);
+			std::string node_name = ixmlNode_getNodeName(node_tag);
 			if (node_name == MB_TAG_META) {
 				auto attr_tag {ixmlNode_getAttributes(node_tag)};
 				if (attr_tag) {
-					string tag_name;
-					string tag_value;
+					std::string tag_name;
+					std::string tag_value;
 					auto att_name {ixmlNamedNodeMap_getNamedItem(attr_tag, MB_ATT_NAME)};
 					if (att_name) {
 						tag_name = ixmlNode_getNodeValue(att_name);
@@ -207,7 +207,7 @@ bool dvda_metabase_t::get_albumart(TagHandler& handler) {
 		return false;
 	}
 	auto debase64_size = CalculateBase64OutputSize(strlen(cdata_value));
-	unique_ptr<uint8_t[]> debase64_data;
+	std::unique_ptr<uint8_t[]> debase64_data;
 	debase64_data.reset(new uint8_t[debase64_size]);
 	debase64_size =	DecodeBase64({debase64_data.get(), debase64_size}, cdata_value);
 	handler.OnPicture(nullptr, {debase64_data.get(), debase64_size});
@@ -232,8 +232,8 @@ IXML_Node* dvda_metabase_t::get_node(const char* tag_name, const char* att_id) {
 					auto attr_store {ixmlNode_getAttributes(node_store)};
 					if (attr_store) {
 						IXML_Node* node_attr;
-						string attr_id;
-						string attr_type;
+						std::string attr_id;
+						std::string attr_type;
 						node_attr = ixmlNamedNodeMap_getNamedItem(attr_store, MB_ATT_ID);
 						if (node_attr) {
 							attr_id = ixmlNode_getNodeValue(node_attr);
@@ -255,13 +255,13 @@ IXML_Node* dvda_metabase_t::get_node(const char* tag_name, const char* att_id) {
 		for (auto i = 0u; i < ixmlNodeList_length(list_item); i++) {
 			auto node_item {ixmlNodeList_item(list_item, i)};
 			if (node_item) {
-				string node_name {ixmlNode_getNodeName(node_item)};
+				std::string node_name {ixmlNode_getNodeName(node_item)};
 				if (node_name == tag_name) {
 					auto attr_item {ixmlNode_getAttributes(node_item)};
 					if (attr_item) {
 						auto node_attr {ixmlNamedNodeMap_getNamedItem(attr_item, MB_ATT_ID)};
 						if (node_attr) {
-							string attr_value = ixmlNode_getNodeValue(node_attr);
+							std::string attr_value = ixmlNode_getNodeValue(node_attr);
 							if (attr_value == att_id) {
 								node_item_id = node_item;
 								break;
@@ -275,15 +275,15 @@ IXML_Node* dvda_metabase_t::get_node(const char* tag_name, const char* att_id) {
 	return node_item_id;
 }
 
-string dvda_metabase_t::track_number_to_id(unsigned track_number) {
-	string track_id;
+std::string dvda_metabase_t::track_number_to_id(unsigned track_number) {
+	std::string track_id;
 	auto audio_track = disc->get_track(track_number - 1);
 	if (audio_track) {
-		track_id += to_string(audio_track->dvda_titleset);
+		track_id += std::to_string(audio_track->dvda_titleset);
 		track_id += ".";
-		track_id += to_string(audio_track->dvda_title);
+		track_id += std::to_string(audio_track->dvda_title);
 		track_id += ".";
-		track_id += to_string(audio_track->dvda_track);
+		track_id += std::to_string(audio_track->dvda_track);
 	}
 	return track_id;
 }

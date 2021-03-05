@@ -1,6 +1,6 @@
 /*
 * MPD SACD Decoder plugin
-* Copyright (c) 2011-2019 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2011-2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * This program is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -27,8 +27,6 @@
 #include "scarletbook.h"
 #include "sacd_reader.h"
 #include "sacd_dsd.h"
-
-using namespace std;
 
 #pragma pack(1)
 
@@ -71,33 +69,33 @@ class id3tags_t {
 public:
 	uint32_t index;
 	uint64_t offset;
-	vector<uint8_t> tag_value;
+        std::vector<uint8_t> tag_value;
 };
 
 class sacd_dsdiff_t : public sacd_reader_t {
-	sacd_media_t*       sacd_media;
-	open_mode_e         mode;
-	area_id_e           track_area;
-	uint32_t            version;
-	uint32_t            samplerate;
-	uint16_t            channel_count;
-	uint16_t            loudspeaker_config;
-	bool                is_emaster;
-	bool                is_dst_encoded;
-	uint64_t            frm8_size;
-	uint64_t            dsti_offset;
-	uint64_t            dsti_size;
-	uint64_t            data_offset;
-	uint64_t            data_size;
-	uint16_t            framerate;
-	uint32_t            dsd_frame_size;
-	uint32_t            frame_count;
-	vector<track_t>     track_index;
-	uint64_t            id3_offset;
-	vector<id3tags_t>   id3tags;
-	uint32_t            current_track;
-	uint64_t            current_offset;
-	uint64_t            current_size;
+        sacd_media_t*          sacd_media;
+        open_mode_e            mode;
+        area_id_e              track_area;
+        uint32_t               version;
+        uint32_t               samplerate;
+        uint16_t               channel_count;
+        uint16_t               loudspeaker_config;
+        bool                   is_emaster;
+        bool                   is_dst_encoded;
+        uint64_t               frm8_size;
+        uint64_t               dsti_offset;
+        uint64_t               dsti_size;
+        uint64_t               data_offset;
+        uint64_t               data_size;
+        uint16_t               framerate;
+        uint32_t               dsd_frame_size;
+        uint32_t               frame_count;
+        std::vector<track_t>   track_index;
+        uint64_t               id3_offset;
+        std::vector<id3tags_t> id3tags;
+        uint32_t               current_track;
+        uint64_t               current_offset;
+        uint64_t               current_size;
 public:
 	sacd_dsdiff_t();
 	virtual ~sacd_dsdiff_t();

@@ -1,6 +1,6 @@
 /*
 * MPD SACD Decoder plugin
-* Copyright (c) 2011-2020 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2011-2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * This program is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -282,7 +282,7 @@ bool sacd_dsdiff_t::open(sacd_media_t* _sacd_media, open_mode_e _mode) {
 			}
 		}
 		else if (ck.has_id("ID3 ")) {
-			id3_offset = min(id3_offset, (uint64_t)sacd_media->get_position() - sizeof(ck));
+			id3_offset = std::min(id3_offset, (uint64_t)sacd_media->get_position() - sizeof(ck));
 			id3tags_t t;
 			t.index  = id3tags.size();
 			t.offset = sacd_media->get_position();
@@ -399,7 +399,7 @@ bool sacd_dsdiff_t::read_frame(uint8_t* frame_data, size_t* frame_size, frame_ty
 	}
 	else {
 		int64_t position = sacd_media->get_position();
-		*frame_size = (size_t)min((int64_t)*frame_size, max((int64_t)0, (int64_t)(current_offset + current_size) - position));
+		*frame_size = (size_t)std::min((int64_t)*frame_size, std::max((int64_t)0, (int64_t)(current_offset + current_size) - position));
 		if (*frame_size > 0) {
 			*frame_size = sacd_media->read(frame_data, *frame_size);
 			*frame_size -= *frame_size % channel_count;
@@ -415,10 +415,10 @@ bool sacd_dsdiff_t::read_frame(uint8_t* frame_data, size_t* frame_size, frame_ty
 }
 
 bool sacd_dsdiff_t::seek(double seconds) {
-	uint64_t offset = min((uint64_t)(get_size() * seconds / get_duration()), get_size());
+	uint64_t offset = std::min((uint64_t)(get_size() * seconds / get_duration()), get_size());
 	if (is_dst_encoded) {
 		if (dsti_size > 0) {
-			uint32_t frame = min((uint32_t)((track_index[current_track].start_time + seconds) * framerate), frame_count - 1);
+			uint32_t frame = std::min((uint32_t)((track_index[current_track].start_time + seconds) * framerate), frame_count - 1);
 			if (frame < (uint32_t)(dsti_size / sizeof(DSTFrameIndex) - 1)) {
 				offset = get_dsti_for_frame(frame) - current_offset;
 			}
@@ -444,7 +444,7 @@ uint64_t sacd_dsdiff_t::get_dsti_for_frame(uint32_t frame_nr) {
 	uint64_t      cur_offset;
 	DSTFrameIndex frame_index;
 	cur_offset = sacd_media->get_position();
-	frame_nr = min(frame_nr, (uint32_t)(dsti_size / sizeof(DSTFrameIndex) - 1));
+	frame_nr = std::min(frame_nr, (uint32_t)(dsti_size / sizeof(DSTFrameIndex) - 1));
 	sacd_media->seek(dsti_offset + frame_nr * sizeof(DSTFrameIndex));
 	cur_offset = sacd_media->get_position();
 	sacd_media->read(&frame_index, sizeof(DSTFrameIndex));

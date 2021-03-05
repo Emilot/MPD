@@ -74,7 +74,7 @@ dvda_fileobject_t* iso_dvda_filesystem_t::file_open(const char* name) {
 	string filepath = "/AUDIO_TS/";
 	filepath += name;
 	uint32_t filesize = 0;
-	fileobject->lba = UDFFindFile(iso_reader, (char*)filepath.c_str(), &filesize);
+	fileobject->lba = UDFFindFile(iso_reader, const_cast<char*>(filepath.c_str()), &filesize);
 	fileobject->size = filesize;
 	if (fileobject->lba == 0) {
 		delete fileobject;

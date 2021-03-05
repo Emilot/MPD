@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003-2020 The Music Player Daemon Project
+ * Copyright (C) 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -44,27 +44,30 @@
 #include "Log.hxx"
 
 #include <assert.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <memory>
 #include <vector>
 
-static const char* DVDA_TRACKXXX_FMT = "AUDIO_TS__TRACK%03u%c.%3s";
-
-static constexpr double SHORT_TRACK_SEC = 2.0;
 static constexpr Domain dvdaiso_domain("dvdaiso");
 
-static bool        param_no_downmixes;
-static bool        param_no_short_tracks;
-static bool        param_no_untagged_tracks;
-static chmode_t    param_playable_area;
-static std::string param_tags_path;
-static bool        param_tags_with_iso;
-static bool        param_use_stdio;
+namespace dvdaiso {
 
-static std::string      dvda_uri;
-static dvda_media_t*    dvda_media    = nullptr;
-static dvda_reader_t*   dvda_reader   = nullptr;
-static dvda_metabase_t* dvda_metabase = nullptr;
+constexpr const char* DVDA_TRACKXXX_FMT{ "AUDIO_TS__TRACK%03u%c.%3s" };
+constexpr double SHORT_TRACK_SEC{ 2.0 };
+
+bool        param_no_downmixes;
+bool        param_no_short_tracks;
+bool        param_no_untagged_tracks;
+chmode_t    param_playable_area;
+std::string param_tags_path;
+bool        param_tags_with_iso;
+bool        param_use_stdio;
+
+std::string                      dvda_uri;
+std::unique_ptr<dvda_media_t>    dvda_media;
+std::unique_ptr<dvda_reader_t>   dvda_reader;
+std::unique_ptr<dvda_metabase_t> dvda_metabase;
 
 static unsigned
 get_container_path_length(const char* path) {
@@ -105,7 +108,7 @@ get_subsong(const char* path, unsigned* track_index, bool* downmix) {
 }
 
 static bool
-dvdaiso_update_ifo(const char* path) {
+update_ifo(const char* path) {
 	std::string curr_uri = path;
 	if (path != nullptr) {
 		if (!dvda_uri.compare(curr_uri)) {
@@ -117,33 +120,28 @@ dvdaiso_update_ifo(const char* path) {
 			return true;
 		}
 	}
-	if (dvda_reader != nullptr) {
+	if (dvda_reader) {
 		dvda_reader->close();
-		delete dvda_reader;
-		dvda_reader = nullptr;
+		dvda_reader.reset();
 	}
-	if (dvda_media != nullptr) {
+	if (dvda_media) {
 		dvda_media->close();
-		delete dvda_media;
-		dvda_media = nullptr;
+		dvda_media.reset();
 	}
-	if (dvda_metabase != nullptr) {
-		delete dvda_metabase;
-		dvda_metabase = nullptr;
-	}
+	dvda_metabase.reset();
 	if (path != nullptr) {
 		if (param_use_stdio) {
-			dvda_media = new dvda_media_file_t();
+			dvda_media = std::make_unique<dvda_media_file_t>();
 		}
 		else {
-			dvda_media = new dvda_media_stream_t();
+			dvda_media = std::make_unique<dvda_media_stream_t>();
 		}
 		if (!dvda_media) {
 			LogError(dvdaiso_domain, "new dvda_media_t() failed");
 			dvda_uri.clear();
 			return false;
 		}
-		dvda_reader = new dvda_disc_t();
+		dvda_reader = std::make_unique<dvda_disc_t>();
 		if (!dvda_reader) {
 			LogError(dvdaiso_domain, "new dvda_disc_t() failed");
 			dvda_uri.clear();
@@ -158,7 +156,7 @@ dvdaiso_update_ifo(const char* path) {
 			dvda_uri.clear();
 			return false;
 		}
-		if (!dvda_reader->open(dvda_media)) {
+		if (!dvda_reader->open(dvda_media.get())) {
 			//LogWarning(dvdaiso_domain, "dvda_reader->open(...) failed");
 			dvda_uri.clear();
 			return false;
@@ -170,7 +168,7 @@ dvdaiso_update_ifo(const char* path) {
 				tags_file.resize(tags_file.rfind('.') + 1);
 				tags_file.append("xml");
 			}
-			dvda_metabase = new dvda_metabase_t(reinterpret_cast<dvda_disc_t*>(dvda_reader), param_tags_path.empty() ? nullptr : param_tags_path.c_str(), tags_file.empty() ? nullptr : tags_file.c_str());
+			dvda_metabase = std::make_unique<dvda_metabase_t>(reinterpret_cast<dvda_disc_t*>(dvda_reader.get()), param_tags_path.empty() ? nullptr : param_tags_path.c_str(), tags_file.empty() ? nullptr : tags_file.c_str());
 		}
 	}
 	dvda_uri = curr_uri;
@@ -178,8 +176,8 @@ dvdaiso_update_ifo(const char* path) {
 }
 
 static void
-dvdaiso_scan_info(unsigned track_index, bool downmix, TagHandler& handler) {
-	auto tag_value = to_string(track_index + 1);
+scan_info(unsigned track_index, bool downmix, TagHandler& handler) {
+	auto tag_value = std::to_string(track_index + 1);
 	handler.OnTag(TAG_TRACK, tag_value.c_str());
 	handler.OnDuration(SongTime::FromS(dvda_reader->get_duration(track_index)));
 	if (!dvda_metabase || (dvda_metabase && !dvda_metabase->get_track_info(track_index + 1, downmix, handler))) {
@@ -193,7 +191,7 @@ dvdaiso_scan_info(unsigned track_index, bool downmix, TagHandler& handler) {
 }
 
 static bool
-dvdaiso_init(const ConfigBlock& block) {
+init(const ConfigBlock& block) {
 	my_av_log_set_callback(mpd_av_log_callback);
 	param_no_downmixes = block.GetBlockValue("no_downmixes", true);
 	param_no_short_tracks = block.GetBlockValue("no_short_tracks", true);
@@ -215,15 +213,15 @@ dvdaiso_init(const ConfigBlock& block) {
 }
 
 static void
-dvdaiso_finish() noexcept {
-	dvdaiso_update_ifo(nullptr);
+finish() noexcept {
+	update_ifo(nullptr);
 	my_av_log_set_default_callback();
 }
 
-static forward_list<DetachedSong>
-dvdaiso_container_scan(Path path_fs) {
-	forward_list<DetachedSong> list;
-	if (path_fs.IsNull() || !dvdaiso_update_ifo(path_fs.c_str())) {
+static std::forward_list<DetachedSong>
+container_scan(Path path_fs) {
+	std::forward_list<DetachedSong> list;
+	if (path_fs.IsNull() || !update_ifo(path_fs.c_str())) {
 		return list;
 	}
 	TagBuilder tag_builder;
@@ -260,17 +258,17 @@ dvdaiso_container_scan(Path path_fs) {
 			}
 			if (add_track) {
 				AddTagHandler h(tag_builder);
-				dvdaiso_scan_info(track_index, false, h);
+				scan_info(track_index, false, h);
 				auto area = dvda_reader->get_channels() > 2 ? 'M' : 'S';
 				tail = list.emplace_after(
 					tail,
 					StringFormat<64>(DVDA_TRACKXXX_FMT, track_index + 1, area, suffix),
 					tag_builder.Commit()
 				);
- 			}
+			}
 			if (add_downmix) {
 				AddTagHandler h(tag_builder);
-				dvdaiso_scan_info(track_index, true, h);
+				scan_info(track_index, true, h);
 				auto area = 'D';
 				tail = list.emplace_after(
 					tail,
@@ -287,9 +285,9 @@ dvdaiso_container_scan(Path path_fs) {
 }
 
 static void
-dvdaiso_file_decode(DecoderClient &client, Path path_fs) {
+file_decode(DecoderClient &client, Path path_fs) {
 	auto path_container = get_container_path(path_fs.c_str());
-	if (!dvdaiso_update_ifo(path_container.c_str())) {
+	if (!update_ifo(path_container.c_str())) {
 		return;
 	}
 	unsigned track;
@@ -311,7 +309,7 @@ dvdaiso_file_decode(DecoderClient &client, Path path_fs) {
 	auto samplerate = dvda_reader->get_samplerate();
 	auto channels = dvda_reader->get_downmix() ? 2u : dvda_reader->get_channels();
 	std::vector<uint8_t> pcm_data(192000);
-	
+
 	// initialize decoder
 	auto audio_format = CheckAudioFormat(samplerate, SampleFormat::S32, channels);
 	auto songtime = SongTime::FromS(dvda_reader->get_duration(track));
@@ -346,12 +344,12 @@ dvdaiso_file_decode(DecoderClient &client, Path path_fs) {
 }
 
 static bool
-dvdaiso_scan_file(Path path_fs, TagHandler& handler) noexcept {
+scan_file(Path path_fs, TagHandler& handler) noexcept {
 	auto path_container = get_container_path(path_fs.c_str());
 	if (path_container.empty()) {
 		return false;
 	}
-	if (!dvdaiso_update_ifo(path_container.c_str())) {
+	if (!update_ifo(path_container.c_str())) {
 		return false;
 	}
 	unsigned track_index;
@@ -360,23 +358,25 @@ dvdaiso_scan_file(Path path_fs, TagHandler& handler) noexcept {
 		LogError(dvdaiso_domain, "cannot get track number");
 		return false;
 	}
-	dvdaiso_scan_info(track_index, downmix, handler);
+	scan_info(track_index, downmix, handler);
 	return true;
 }
 
-static const char* const dvdaiso_suffixes[] = {
+static const char* const suffixes[] {
 	"iso",
 	nullptr
 };
 
-static const char* const dvdaiso_mime_types[] = {
+static const char* const mime_types[] {
 	"application/x-iso",
 	nullptr
 };
 
+}
+
 constexpr DecoderPlugin dvdaiso_decoder_plugin =
-	DecoderPlugin("dvdaiso", dvdaiso_file_decode, dvdaiso_scan_file)
-	.WithInit(dvdaiso_init, dvdaiso_finish)
-	.WithContainer(dvdaiso_container_scan)
-	.WithSuffixes(dvdaiso_suffixes)
-	.WithMimeTypes(dvdaiso_mime_types);
+	DecoderPlugin("dvdaiso", dvdaiso::file_decode, dvdaiso::scan_file)
+	.WithInit(dvdaiso::init, dvdaiso::finish)
+	.WithContainer(dvdaiso::container_scan)
+	.WithSuffixes(dvdaiso::suffixes)
+	.WithMimeTypes(dvdaiso::mime_types);

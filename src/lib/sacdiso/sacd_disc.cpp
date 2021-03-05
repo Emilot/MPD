@@ -1,6 +1,6 @@
 /*
 * MPD SACD Decoder plugin
-* Copyright (c) 2017 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2017-2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * This module partially uses code from SACD Ripper http://code.google.com/p/sacd-ripper/ project
 *
@@ -25,8 +25,6 @@
 #include <string.h>
 #include "sacd_disc.h"
 #include "util/StringView.hxx"
-
-using namespace std;
 
 static inline int has_two_channel(scarletbook_handle_t* handle) {
 	return handle->twoch_area_idx != -1;
@@ -64,8 +62,8 @@ static codepage_id_t codepage_ids[] = {
 	{28591,  character_set[7]},
 };
 
-static inline string charset_convert(const char* instring, size_t insize, uint8_t codepage_index) {
-	string utf8_string;
+static inline std::string charset_convert(const char* instring, size_t insize, uint8_t codepage_index) {
+	std::string utf8_string;
 	if (codepage_index < sizeof(codepage_ids) / sizeof(*codepage_ids)) {
 		const char* codepage_name = codepage_ids[codepage_index].name;
 		iconv_t conv = iconv_open("UTF-8", codepage_name);
@@ -202,16 +200,16 @@ void sacd_disc_t::get_info(uint32_t track_index, TagHandler& handler) {
 	if (!(area != nullptr && track_index < get_tracks(track_area))) {
 		return;
 	}
-	string tag_value;
+	std::string tag_value;
 	if (get_handle()->master_toc->album_set_size > 1) {
 		if (get_handle()->master_toc->album_sequence_number > 0) {
-			tag_value = to_string(get_handle()->master_toc->album_sequence_number);
+			tag_value = std::to_string(get_handle()->master_toc->album_sequence_number);
 			handler.OnTag(TAG_DISC, tag_value.c_str());
 		}
 	}
 	scarletbook_handle_t* sb = get_handle();
 	if (sb->master_toc->disc_date_year > 0) {
-		tag_value = to_string(sb->master_toc->disc_date_year);
+		tag_value = std::to_string(sb->master_toc->disc_date_year);
 		/*
 		if (sb->master_toc->disc_date_month > 0) {
 			tag_value += "-";

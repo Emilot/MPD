@@ -1,7 +1,7 @@
 /*
  * SACD Ripper - http://code.google.com/p/sacd-ripper/
  *
- * Copyright (c) 2010-2014 by respective authors.
+ * Copyright (c) 2010-2021 by respective authors.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,8 +24,6 @@
 
 #include <stdint.h>
 #include <string>
-
-using namespace std;
 
 #define SACD_LSN_SIZE                  2048
 #define SACD_SAMPLING_FREQUENCY        2822400
@@ -219,22 +217,22 @@ typedef struct {
 master_sacd_text_t;
 
 typedef struct {
-	string album_title;
-	string album_artist;
-	string album_publisher;
-	string album_copyright;
-	string album_title_phonetic;
-	string album_artist_phonetic;
-	string album_publisher_phonetic;
-	string album_copyright_phonetic;
-	string disc_title;
-	string disc_artist;
-	string disc_publisher;
-	string disc_copyright;
-	string disc_title_phonetic;
-	string disc_artist_phonetic;
-	string disc_publisher_phonetic;
-	string disc_copyright_phonetic;
+        std::string album_title;
+        std::string album_artist;
+        std::string album_publisher;
+        std::string album_copyright;
+        std::string album_title_phonetic;
+        std::string album_artist_phonetic;
+        std::string album_publisher_phonetic;
+        std::string album_copyright_phonetic;
+        std::string disc_title;
+        std::string disc_artist;
+        std::string disc_publisher;
+        std::string disc_copyright;
+        std::string disc_title_phonetic;
+        std::string disc_artist_phonetic;
+        std::string disc_publisher_phonetic;
+        std::string disc_copyright_phonetic;
 } 
 master_text_t;
 
@@ -302,20 +300,20 @@ typedef struct {
 area_toc_t;
 
 typedef struct {
-	string track_type_title;
-	string track_type_performer;
-	string track_type_songwriter;
-	string track_type_composer;
-	string track_type_arranger;
-	string track_type_message;
-	string track_type_extra_message;
-	string track_type_title_phonetic;
-	string track_type_performer_phonetic;
-	string track_type_songwriter_phonetic;
-	string track_type_composer_phonetic;
-	string track_type_arranger_phonetic;
-	string track_type_message_phonetic;
-	string track_type_extra_message_phonetic;
+        std::string track_type_title;
+        std::string track_type_performer;
+        std::string track_type_songwriter;
+        std::string track_type_composer;
+        std::string track_type_arranger;
+        std::string track_type_message;
+        std::string track_type_extra_message;
+        std::string track_type_title_phonetic;
+        std::string track_type_performer_phonetic;
+        std::string track_type_songwriter_phonetic;
+        std::string track_type_composer_phonetic;
+        std::string track_type_arranger_phonetic;
+        std::string track_type_message_phonetic;
+        std::string track_type_extra_message_phonetic;
 } 
 area_track_text_t;
 
@@ -447,10 +445,10 @@ typedef struct {
 	area_track_text_t        area_track_text[255];      // max of 255 supported tracks
 	area_isrc_genre_t*       area_isrc_genre;
 
-	string                   description;
-	string                   copyright;
-	string                   description_phonetic;
-	string                   copyright_phonetic;
+        std::string              description;
+        std::string              copyright;
+        std::string              description_phonetic;
+        std::string              copyright_phonetic;
 }
 scarletbook_area_t;
 

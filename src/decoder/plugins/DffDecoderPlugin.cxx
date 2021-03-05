@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003-2020 The Music Player Daemon Project
+ * Copyright (C) 2003-2021 The Music Player Daemon Project
  * http://www.musicpd.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -44,24 +44,25 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <memory>
 #include <vector>
-
-using namespace std;
-
-static const char* DSDIFF_TRACKXXX_FMT = "%cC_AUDIO__TRACK%03u.%3s";
 
 static constexpr Domain dsdiff_domain("dsdiff");
 
-static unsigned  param_dstdec_threads;
-static bool      param_edited_master;
-static bool      param_single_track;
-static bool      param_lsbitfirst;
-static area_id_e param_playable_area;
-static bool      param_use_stdio;
+namespace dsdiff {
 
-static std::string    dsdiff_uri;
-static sacd_media_t*  sacd_media  = nullptr;
-static sacd_reader_t* sacd_reader = nullptr;
+constexpr const char* DSDIFF_TRACKXXX_FMT{ "%cC_AUDIO__TRACK%03u.%3s" };
+
+unsigned  param_dstdec_threads;
+bool      param_edited_master;
+bool      param_single_track;
+bool      param_lsbitfirst;
+area_id_e param_playable_area;
+bool      param_use_stdio;
+
+std::string                    dsdiff_uri;
+std::unique_ptr<sacd_media_t>  sacd_media;
+std::unique_ptr<sacd_reader_t> sacd_reader;
 
 static unsigned
 get_container_path_length(const char* path) {
@@ -70,7 +71,7 @@ get_container_path_length(const char* path) {
 	return container_path.length();
 }
 
-static string
+static std::string
 get_container_path(const char* path) {
 	std::string container_path = path;
 	auto length = get_container_path_length(path);
@@ -103,7 +104,7 @@ get_subsong(const char* path) {
 }
 
 static bool
-dsdiff_update_toc(const char* path) {
+update_toc(const char* path) {
 	std::string curr_uri = path;
 	if (path != nullptr) {
 		if (!dsdiff_uri.compare(curr_uri)) {
@@ -115,28 +116,26 @@ dsdiff_update_toc(const char* path) {
 			return true;
 		}
 	}
-	if (sacd_reader != nullptr) {
+	if (sacd_reader) {
 		sacd_reader->close();
-		delete sacd_reader;
-		sacd_reader = nullptr;
+		sacd_reader.reset();
 	}
-	if (sacd_media != nullptr) {
+	if (sacd_media) {
 		sacd_media->close();
-		delete sacd_media;
-		sacd_media = nullptr;
+		sacd_media.reset();
 	}
 	if (path != nullptr) {
 		if (param_use_stdio) {
-			sacd_media = new sacd_media_file_t();
+			sacd_media = std::make_unique<sacd_media_file_t>();
 		}
 		else {
-			sacd_media = new sacd_media_stream_t();
+			sacd_media = std::make_unique<sacd_media_stream_t>();
 		}
 		if (!sacd_media) {
 			LogError(dsdiff_domain, "new sacd_media_t() failed");
 			return false;
 		}
-		sacd_reader = new sacd_dsdiff_t;
+		sacd_reader = std::make_unique<sacd_dsdiff_t>();
 		if (!sacd_reader) {
 			LogError(dsdiff_domain, "new sacd_dsdiff_t() failed");
 			return false;
@@ -149,7 +148,7 @@ dsdiff_update_toc(const char* path) {
 			LogWarning(dsdiff_domain, err.c_str());
 			return false;
 		}
-		if (!sacd_reader->open(sacd_media, param_single_track ? MODE_SINGLE_TRACK : MODE_MULTI_TRACK)) {
+		if (!sacd_reader->open(sacd_media.get(), param_single_track ? MODE_SINGLE_TRACK : MODE_MULTI_TRACK)) {
 			//LogWarning(dsdiff_domain, "sacd_reader->open(...) failed");
 			return false;
 		}
@@ -159,8 +158,8 @@ dsdiff_update_toc(const char* path) {
 }
 
 static void
-dsdiff_scan_info(unsigned track, TagHandler& handler) {
-	std::string tag_value = to_string(track + 1);
+scan_info(unsigned track, TagHandler& handler) {
+	std::string tag_value = std::to_string(track + 1);
 	handler.OnTag(TAG_TRACK, tag_value.c_str());
 	handler.OnDuration(SongTime::FromS(sacd_reader->get_duration(track)));
 	sacd_reader->get_info(track, handler);
@@ -169,7 +168,7 @@ dsdiff_scan_info(unsigned track, TagHandler& handler) {
 }
 
 static bool
-dsdiff_init(const ConfigBlock& block) {
+init(const ConfigBlock& block) {
 	param_dstdec_threads = block.GetBlockValue("dstdec_threads", thread::hardware_concurrency());
 	param_edited_master  = block.GetBlockValue("edited_master", false);
 	param_single_track   = block.GetBlockValue("single_track", false);
@@ -189,20 +188,20 @@ dsdiff_init(const ConfigBlock& block) {
 }
 
 static void
-dsdiff_finish() noexcept {
-	dsdiff_update_toc(nullptr);
+finish() noexcept {
+	update_toc(nullptr);
 }
 
-static forward_list<DetachedSong>
-dsdiff_container_scan(Path path_fs) {
-	forward_list<DetachedSong> list;
+static std::forward_list<DetachedSong>
+container_scan(Path path_fs) {
+	std::forward_list<DetachedSong> list;
 	if (path_fs.IsNull()) {
 		if (!param_single_track) {
 			list.emplace_after(list.before_begin(), "multitrack_dsdiff");
 		}
 		return list;
 	}
-	if (!dsdiff_update_toc(path_fs.c_str())) {
+	if (!update_toc(path_fs.c_str())) {
 		return list;
 	}
 	TagBuilder tag_builder;
@@ -217,7 +216,7 @@ dsdiff_container_scan(Path path_fs) {
 		sacd_reader->select_area(AREA_TWOCH);
 		for (auto track = 0u; track < twoch_count; track++) {
 			AddTagHandler handler(tag_builder);
-			dsdiff_scan_info(track, handler);
+			scan_info(track, handler);
 			tail = list.emplace_after(
 				tail,
 				StringFormat<64>(DSDIFF_TRACKXXX_FMT, '2', track + 1, suffix),
@@ -229,7 +228,7 @@ dsdiff_container_scan(Path path_fs) {
 		sacd_reader->select_area(AREA_MULCH);
 		for (auto track = 0u; track < mulch_count; track++) {
 			AddTagHandler h(tag_builder);
-			dsdiff_scan_info(track, h);
+			scan_info(track, h);
 			tail = list.emplace_after(
 				tail,
 				StringFormat<64>(DSDIFF_TRACKXXX_FMT, 'M', track + twoch_count + 1, suffix),
@@ -248,9 +247,9 @@ bit_reverse_buffer(uint8_t* p, uint8_t* end) {
 }
 
 static void
-dsdiff_file_decode(DecoderClient &client, Path path_fs) {
+file_decode(DecoderClient &client, Path path_fs) {
 	auto path_container = get_container_path(path_fs.c_str());
-	if (!dsdiff_update_toc(path_container.c_str())) {
+	if (!update_toc(path_container.c_str())) {
 		return;
 	}
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
@@ -379,9 +378,9 @@ dsdiff_file_decode(DecoderClient &client, Path path_fs) {
 }
 
 static bool
-dsdiff_scan_file(Path path_fs, TagHandler& handler) noexcept {
+scan_file(Path path_fs, TagHandler& handler) noexcept {
 	auto path_container = get_container_path(path_fs.c_str());
-	if (path_container.empty() || !dsdiff_update_toc(path_container.c_str())) {
+	if (path_container.empty() || !update_toc(path_container.c_str())) {
 		return false;
 	}
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
@@ -400,25 +399,27 @@ dsdiff_scan_file(Path path_fs, TagHandler& handler) noexcept {
 			return false;
 		}
 	}
-	dsdiff_scan_info(track, handler);
+	scan_info(track, handler);
 	return true;
 }
 
-static const char* const dsdiff_suffixes[] = {
+static const char* const suffixes[] {
 	"dff",
 	nullptr
 };
 
-static const char* const dsdiff_mime_types[] = {
+static const char* const mime_types[] {
 	"application/x-dff",
 	"audio/x-dff",
 	"audio/x-dsd",
 	nullptr
 };
 
+}
+
 constexpr DecoderPlugin dff_decoder_plugin =
-	DecoderPlugin("dsdiff", dsdiff_file_decode, dsdiff_scan_file)
-	.WithInit(dsdiff_init, dsdiff_finish)
-	.WithContainer(dsdiff_container_scan)
-	.WithSuffixes(dsdiff_suffixes)
-	.WithMimeTypes(dsdiff_mime_types);
+	DecoderPlugin("dsdiff", dsdiff::file_decode, dsdiff::scan_file)
+	.WithInit(dsdiff::init, dsdiff::finish)
+	.WithContainer(dsdiff::container_scan)
+	.WithSuffixes(dsdiff::suffixes)
+	.WithMimeTypes(dsdiff::mime_types);

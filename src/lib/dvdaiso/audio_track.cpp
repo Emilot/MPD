@@ -1,6 +1,6 @@
 /*
 * MPD DVD-Audio Decoder plugin
-* Copyright (c) 2014 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * DVD-Audio Decoder is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -24,10 +24,8 @@ bool audio_track_t::check_chmode(chmode_t chmode, bool downmix) {
 	switch (chmode) {
 	case CHMODE_TWOCH:
 		return channels <= 2 || (downmix && audio_stream_info.can_downmix);
-		break;
 	case CHMODE_MULCH:
 		return channels > 2 && (!downmix);
-		break;
 	default:
 		break;
 	}

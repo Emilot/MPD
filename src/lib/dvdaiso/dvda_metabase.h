@@ -1,6 +1,6 @@
 /*
 * MPD DVD-Audio Decoder plugin
-* Copyright (c) 2014-2020 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
+* Copyright (c) 2014-2021 Maxim V.Anisiutkin <maxim.anisiutkin@gmail.com>
 *
 * DVD-Audio Decoder is free software; you can redistribute it and/or
 * modify it under the terms of the GNU Lesser General Public
@@ -27,8 +27,6 @@
 #include "tag/Handler.hxx"
 #include "dvda_disc.h"
 
-using namespace std;
-
 constexpr char const* MB_TAG_ROOT       = "root";
 constexpr char const* MB_TAG_STORE      = "store";
 constexpr char const* MB_TAG_TRACK      = "track";
@@ -49,10 +47,10 @@ constexpr char const* METABASE_VERSION = "1.2";
 
 class dvda_metabase_t {
 	dvda_disc_t*   disc;
-	string         store_id;
-	string         store_path;
-	string         store_file;
-	string         xmlfile;
+	std::string    store_id;
+	std::string    store_path;
+	std::string    store_file;
+	std::string    xmlfile;
 	IXML_Document* xmldoc;
 	bool           initialized;
 public:
@@ -63,7 +61,7 @@ public:
 private:
 	bool init_xmldoc();
 	IXML_Node* get_node(const char* tag_name, const char* att_id);
-	string track_number_to_id(unsigned track_number);
+	std::string track_number_to_id(unsigned track_number);
 };
 
 #endif

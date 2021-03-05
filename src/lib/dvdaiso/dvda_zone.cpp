@@ -25,6 +25,8 @@
 #include "dvda_zone.h"
 #include "audio_stream.h"
 
+auto PTS_TO_SEC = [](auto pts) { return (double)pts / 90000.0; };
+
 aob_object_t::aob_object_t(dvd_type_e type) : dvda_object_t(type) {
 }
 
@@ -349,7 +351,7 @@ bool dvda_titleset_t::open(dvda_zone_t* _zone, int titleset_index) {
 					}
 					zone = _zone;
 				}
-				delete ats_buf;
+				delete[] ats_buf;
 			}
 		}
 		_zone->get_filesystem()->file_close(atsi_file);
