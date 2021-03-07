@@ -64,61 +64,30 @@ std::string param_tags_path;
 bool        param_tags_with_iso;
 bool        param_use_stdio;
 
-std::string                      dvda_uri;
+AllocatedPath                    dvda_path{ nullptr };
 std::unique_ptr<dvda_media_t>    dvda_media;
 std::unique_ptr<dvda_reader_t>   dvda_reader;
 std::unique_ptr<dvda_metabase_t> dvda_metabase;
 
-static unsigned
-get_container_path_length(const char* path) {
-	std::string container_path = path;
-	container_path.resize(strrchr(container_path.c_str(), '/') - container_path.c_str());
-	return container_path.length();
-}
-
-static std::string
-get_container_path(const char* path) {
-	std::string container_path = path;
-	auto length = get_container_path_length(path);
-	if (length >= 4) {
-		container_path.resize(length);
-		auto c_str = container_path.c_str();
-		if (strcasecmp(c_str + length - 4, ".iso") != 0) {
-			container_path.resize(0);
-		}
-	}
-	return container_path;
-}
-
 static bool
-get_subsong(const char* path, unsigned* track_index, bool* downmix) {
-	auto length = get_container_path_length(path);
-	int params = 0;
-	if (length > 0) {
-		const char* ptr = path + length + 1;
-		unsigned track_number;
-		char area = '\0';
-		char suffix[4];
-		params = sscanf(ptr, DVDA_TRACKXXX_FMT, &track_number, &area, &suffix);
-		suffix[3] = '\0';
-		*track_index = track_number - 1;
-		*downmix = area == 'D';
-	}
+get_subsong(Path path_fs, unsigned& index, bool& downmix) {
+	auto ptr = path_fs.GetBase().c_str();
+	char area = '\0';
+	char suffix[4];
+	auto params = sscanf(ptr, DVDA_TRACKXXX_FMT, &index, &area, suffix);
+	index--;
+	downmix = area == 'D';
 	return params == 3;
 }
 
 static bool
-update_ifo(const char* path) {
-	std::string curr_uri = path;
-	if (path != nullptr) {
-		if (!dvda_uri.compare(curr_uri)) {
-			return true;
-		}
+update_ifo(Path path_fs) {
+	if (path_fs.IsNull()) {
+		return false;
 	}
-	else {
-		if (dvda_uri.empty()) {
-			return true;
-		}
+	auto curr_path = path_fs.GetDirectoryName();
+	if (dvda_path == curr_path) {
+		return true;
 	}
 	if (dvda_reader) {
 		dvda_reader->close();
@@ -129,7 +98,8 @@ update_ifo(const char* path) {
 		dvda_media.reset();
 	}
 	dvda_metabase.reset();
-	if (path != nullptr) {
+	dvda_path.SetNull();
+	if (!curr_path.IsNull()) {
 		if (param_use_stdio) {
 			dvda_media = std::make_unique<dvda_media_file_t>();
 		}
@@ -138,40 +108,36 @@ update_ifo(const char* path) {
 		}
 		if (!dvda_media) {
 			LogError(dvdaiso_domain, "new dvda_media_t() failed");
-			dvda_uri.clear();
 			return false;
 		}
 		dvda_reader = std::make_unique<dvda_disc_t>();
 		if (!dvda_reader) {
 			LogError(dvdaiso_domain, "new dvda_disc_t() failed");
-			dvda_uri.clear();
 			return false;
 		}
-		if (!dvda_media->open(path)) {
+		if (!dvda_media->open(curr_path.c_str())) {
 			std::string err;
 			err  = "dvda_media->open('";
-			err += path;
+			err += curr_path.c_str();
 			err += "') failed";
 			LogWarning(dvdaiso_domain, err.c_str());
-			dvda_uri.clear();
 			return false;
 		}
 		if (!dvda_reader->open(dvda_media.get())) {
 			//LogWarning(dvdaiso_domain, "dvda_reader->open(...) failed");
-			dvda_uri.clear();
 			return false;
 		}
 		if (!param_tags_path.empty() || param_tags_with_iso) {
 			std::string tags_file;
 			if (param_tags_with_iso) {
-				tags_file = path;
+				tags_file = curr_path.c_str();
 				tags_file.resize(tags_file.rfind('.') + 1);
 				tags_file.append("xml");
 			}
 			dvda_metabase = std::make_unique<dvda_metabase_t>(reinterpret_cast<dvda_disc_t*>(dvda_reader.get()), param_tags_path.empty() ? nullptr : param_tags_path.c_str(), tags_file.empty() ? nullptr : tags_file.c_str());
 		}
+		dvda_path = curr_path;
 	}
-	dvda_uri = curr_uri;
 	return true;
 }
 
@@ -221,7 +187,7 @@ finish() noexcept {
 static std::forward_list<DetachedSong>
 container_scan(Path path_fs) {
 	std::forward_list<DetachedSong> list;
-	if (path_fs.IsNull() || !update_ifo(path_fs.c_str())) {
+	if (!update_ifo(path_fs)) {
 		return list;
 	}
 	TagBuilder tag_builder;
@@ -286,13 +252,12 @@ container_scan(Path path_fs) {
 
 static void
 file_decode(DecoderClient &client, Path path_fs) {
-	auto path_container = get_container_path(path_fs.c_str());
-	if (!update_ifo(path_container.c_str())) {
+	if (!update_ifo(path_fs)) {
 		return;
 	}
 	unsigned track;
 	bool downmix;
-	if (!get_subsong(path_fs.c_str(), &track, &downmix)) {
+	if (!get_subsong(path_fs, track, downmix)) {
 		LogError(dvdaiso_domain, "cannot get track number");
 		return;
 	}
@@ -345,16 +310,12 @@ file_decode(DecoderClient &client, Path path_fs) {
 
 static bool
 scan_file(Path path_fs, TagHandler& handler) noexcept {
-	auto path_container = get_container_path(path_fs.c_str());
-	if (path_container.empty()) {
-		return false;
-	}
-	if (!update_ifo(path_container.c_str())) {
+	if (!update_ifo(path_fs)) {
 		return false;
 	}
 	unsigned track_index;
 	bool downmix;
-	if (!get_subsong(path_fs.c_str(), &track_index, &downmix)) {
+	if (!get_subsong(path_fs, track_index, downmix)) {
 		LogError(dvdaiso_domain, "cannot get track number");
 		return false;
 	}

@@ -60,61 +60,32 @@ bool      param_lsbitfirst;
 area_id_e param_playable_area;
 bool      param_use_stdio;
 
-std::string                    dsdiff_uri;
+AllocatedPath                  dsdiff_path{ nullptr };
 std::unique_ptr<sacd_media_t>  sacd_media;
 std::unique_ptr<sacd_reader_t> sacd_reader;
 
 static unsigned
-get_container_path_length(const char* path) {
-	std::string container_path = path;
-	container_path.resize(strrchr(container_path.c_str(), '/') - container_path.c_str());
-	return container_path.length();
-}
-
-static std::string
-get_container_path(const char* path) {
-	std::string container_path = path;
-	auto length = get_container_path_length(path);
-	if (length >= 4) {
-		container_path.resize(length);
-		auto c_str = container_path.c_str();
-		if (strcasecmp(c_str + length - 4, ".dff") != 0) {
-			container_path = path;
-		}
+get_subsong(Path path_fs) {
+	auto ptr = path_fs.GetBase().c_str();
+	char area = '\0';
+	unsigned index = 0;
+	char suffix[4];
+	auto params = sscanf(ptr, DSDIFF_TRACKXXX_FMT, &area, &index, suffix);
+	if (area == 'M') {
+		index += sacd_reader->get_tracks(AREA_TWOCH);
 	}
-	return container_path;
-}
-
-static unsigned
-get_subsong(const char* path) {
-	auto length = get_container_path_length(path);
-	if (length > 0) {
-		const char* ptr = path + length + 1;
-		char area = '\0';
-		unsigned track_index = 0;
-		char suffix[4];
-		sscanf(ptr, DSDIFF_TRACKXXX_FMT, &area, &track_index, suffix);
-		if (area == 'M') {
-			track_index += sacd_reader->get_tracks(AREA_TWOCH);
-		}
-		track_index--;
-		return track_index;
-	}
-	return 0;
+	index--;
+	return (params == 3) ? index : 0;
 }
 
 static bool
-update_toc(const char* path) {
-	std::string curr_uri = path;
-	if (path != nullptr) {
-		if (!dsdiff_uri.compare(curr_uri)) {
-			return true;
-		}
+update_toc(Path path_fs) {
+	if (path_fs.IsNull()) {
+		return false;
 	}
-	else {
-		if (dsdiff_uri.empty()) {
-			return true;
-		}
+	auto curr_path = AllocatedPath(path_fs);
+	if (dsdiff_path == curr_path) {
+		return true;
 	}
 	if (sacd_reader) {
 		sacd_reader->close();
@@ -124,7 +95,8 @@ update_toc(const char* path) {
 		sacd_media->close();
 		sacd_media.reset();
 	}
-	if (path != nullptr) {
+	dsdiff_path.SetNull();
+	if (!curr_path.IsNull()) {
 		if (param_use_stdio) {
 			sacd_media = std::make_unique<sacd_media_file_t>();
 		}
@@ -140,10 +112,10 @@ update_toc(const char* path) {
 			LogError(dsdiff_domain, "new sacd_dsdiff_t() failed");
 			return false;
 		}
-		if (!sacd_media->open(path)) {
+		if (!sacd_media->open(curr_path.c_str())) {
 			std::string err;
 			err  = "sacd_media->open('";
-			err += path;
+			err += curr_path.c_str();
 			err += "') failed";
 			LogWarning(dsdiff_domain, err.c_str());
 			return false;
@@ -152,8 +124,8 @@ update_toc(const char* path) {
 			//LogWarning(dsdiff_domain, "sacd_reader->open(...) failed");
 			return false;
 		}
+		dsdiff_path = curr_path;
 	}
-	dsdiff_uri = curr_uri;
 	return true;
 }
 
@@ -201,7 +173,7 @@ container_scan(Path path_fs) {
 		}
 		return list;
 	}
-	if (!update_toc(path_fs.c_str())) {
+	if (!update_toc(path_fs)) {
 		return list;
 	}
 	TagBuilder tag_builder;
@@ -248,13 +220,12 @@ bit_reverse_buffer(uint8_t* p, uint8_t* end) {
 
 static void
 file_decode(DecoderClient &client, Path path_fs) {
-	auto path_container = get_container_path(path_fs.c_str());
-	if (!update_toc(path_container.c_str())) {
+	if (!update_toc(path_fs)) {
 		return;
 	}
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
 	auto mulch_count = sacd_reader->get_tracks(AREA_MULCH);
-	auto track = (twoch_count + mulch_count > 1) ? get_subsong(path_fs.c_str()) : 0;
+	auto track = (twoch_count + mulch_count > 1) ? get_subsong(path_fs) : 0;
 
 	// initialize reader
 	sacd_reader->set_emaster(param_edited_master);
@@ -379,13 +350,12 @@ file_decode(DecoderClient &client, Path path_fs) {
 
 static bool
 scan_file(Path path_fs, TagHandler& handler) noexcept {
-	auto path_container = get_container_path(path_fs.c_str());
-	if (path_container.empty() || !update_toc(path_container.c_str())) {
+	if (!update_toc(path_fs)) {
 		return false;
 	}
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
 	auto mulch_count = sacd_reader->get_tracks(AREA_MULCH);
-	auto track = (twoch_count + mulch_count > 1) ? get_subsong(path_fs.c_str()) : 0;
+	auto track = (twoch_count + mulch_count > 1) ? get_subsong(path_fs) : 0;
 	if (track < twoch_count) {
 		sacd_reader->select_area(AREA_TWOCH);
 	}

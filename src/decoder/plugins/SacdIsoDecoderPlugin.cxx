@@ -63,62 +63,33 @@ std::string param_tags_path;
 bool        param_tags_with_iso;
 bool        param_use_stdio;
 
-std::string                      sacd_uri;
+AllocatedPath                    sacd_path{ nullptr };
 std::unique_ptr<sacd_media_t>    sacd_media;
 std::unique_ptr<sacd_reader_t>   sacd_reader;
 std::unique_ptr<sacd_metabase_t> sacd_metabase;
 
 static unsigned
-get_container_path_length(const char* path) {
-	std::string container_path = path;
-	container_path.resize(strrchr(container_path.c_str(), '/') - container_path.c_str());
-	return container_path.length();
-}
-
-static std::string
-get_container_path(const char* path) {
-	std::string container_path = path;
-	auto length = get_container_path_length(path);
-	if (length >= 4) {
-		container_path.resize(length);
-		auto c_str = container_path.c_str();
-		if (strcasecmp(c_str + length - 4, ".dat") != 0 && strcasecmp(c_str + length - 4, ".iso") != 0) {
-			container_path.resize(0);
-		}
+get_subsong(Path path_fs) {
+	auto ptr = path_fs.GetBase().c_str();
+	char area = '\0';
+	unsigned index = 0;
+	char suffix[4];
+	auto params = sscanf(ptr, SACD_TRACKXXX_FMT, &area, &index, suffix);
+	if (area == 'M') {
+		index += sacd_reader->get_tracks(AREA_TWOCH);
 	}
-	return container_path;
-}
-
-static unsigned
-get_subsong(const char* path) {
-	auto length = get_container_path_length(path);
-	if (length > 0) {
-		auto ptr = path + length + 1;
-		auto area = '\0';
-		unsigned track_index = 0;
-		char suffix[4];
-		sscanf(ptr, SACD_TRACKXXX_FMT, &area, &track_index, suffix);
-		if (area == 'M') {
-			track_index += sacd_reader->get_tracks(AREA_TWOCH);
-		}
-		track_index--;
-		return track_index;
-	}
-	return 0;
+	index--;
+	return (params == 3) ? index : 0;
 }
 
 static bool
-update_toc(const char* path) {
-	std::string curr_uri = path;
-	if (path != nullptr) {
-		if (!sacd_uri.compare(curr_uri)) {
-			return true;
-		}
+update_toc(Path path_fs) {
+	if (path_fs.IsNull()) {
+		return false;
 	}
-	else {
-		if (sacd_uri.empty()) {
-			return true;
-		}
+	auto curr_path = path_fs.GetDirectoryName();
+	if (sacd_path == curr_path) {
+		return true;
 	}
 	if (sacd_reader) {
 		sacd_reader->close();
@@ -128,10 +99,9 @@ update_toc(const char* path) {
 		sacd_media->close();
 		sacd_media.reset();
 	}
-	if (sacd_metabase) {
-		sacd_metabase.reset();
-	}
-	if (path != nullptr) {
+	sacd_metabase.reset();
+	sacd_path.SetNull();
+	if (!curr_path.IsNull()) {
 		if (param_use_stdio) {
 			sacd_media = std::make_unique<sacd_media_file_t>();
 		}
@@ -140,40 +110,36 @@ update_toc(const char* path) {
 		}
 		if (!sacd_media) {
 			LogError(sacdiso_domain, "new sacd_media_t() failed");
-			sacd_uri.clear();
 			return false;
 		}
 		sacd_reader = std::make_unique<sacd_disc_t>();
 		if (!sacd_reader) {
 			LogError(sacdiso_domain, "new sacd_disc_t() failed");
-			sacd_uri.clear();
 			return false;
 		}
-		if (!sacd_media->open(path)) {
+		if (!sacd_media->open(curr_path.c_str())) {
 			std::string err;
 			err  = "sacd_media->open('";
-			err += path;
+			err += curr_path.c_str();
 			err += "') failed";
 			LogWarning(sacdiso_domain, err.c_str());
-			sacd_uri.clear();
 			return false;
 		}
 		if (!sacd_reader->open(sacd_media.get())) {
 			//LogWarning(sacdiso_domain, "sacd_reader->open(...) failed");
-			sacd_uri.clear();
 			return false;
 		}
 		if (!param_tags_path.empty() || param_tags_with_iso) {
 			std::string tags_file;
 			if (param_tags_with_iso) {
-				tags_file = path;
+				tags_file = curr_path.c_str();
 				tags_file.resize(tags_file.rfind('.') + 1);
 				tags_file.append("xml");
 			}
 			sacd_metabase = std::make_unique<sacd_metabase_t>(reinterpret_cast<sacd_disc_t*>(sacd_reader.get()), param_tags_path.empty() ? nullptr : param_tags_path.c_str(), tags_file.empty() ? nullptr : tags_file.c_str());
 		}
+		sacd_path = curr_path;
 	}
-	sacd_uri = curr_uri;
 	return true;
 }
 
@@ -221,7 +187,7 @@ finish() noexcept {
 static std::forward_list<DetachedSong>
 container_scan(Path path_fs) {
 	std::forward_list<DetachedSong> list;
-	if (path_fs.IsNull() || !update_toc(path_fs.c_str())) {
+	if (!update_toc(path_fs)) {
 		return list;
 	}
 	TagBuilder tag_builder;
@@ -265,11 +231,10 @@ bit_reverse_buffer(uint8_t* p, uint8_t* end) {
 
 static void
 file_decode(DecoderClient &client, Path path_fs) {
-	auto path_container = get_container_path(path_fs.c_str());
-	if (!update_toc(path_container.c_str())) {
+	if (!update_toc(path_fs)) {
 		return;
 	}
-	auto track = get_subsong(path_fs.c_str());
+	auto track = get_subsong(path_fs);
 
 	// initialize reader
 	sacd_reader->set_emaster(param_edited_master);
@@ -398,14 +363,10 @@ file_decode(DecoderClient &client, Path path_fs) {
 
 static bool
 scan_file(Path path_fs, TagHandler& handler) noexcept {
-	auto path_container = get_container_path(path_fs.c_str());
-	if (path_container.empty()) {
+	if (!update_toc(path_fs)) {
 		return false;
 	}
-	if (!update_toc(path_container.c_str())) {
-		return false;
-	}
-	auto track_index = get_subsong(path_fs.c_str());
+	auto track_index = get_subsong(path_fs);
 	auto track = track_index;
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
 	auto mulch_count = sacd_reader->get_tracks(AREA_MULCH);
