@@ -33,6 +33,7 @@
 #include "song/DetachedSong.hxx"
 #include "fs/Path.hxx"
 #include "fs/AllocatedPath.hxx"
+#include "fs/FileSystem.hxx"
 #include "thread/Cond.hxx"
 #include "thread/Mutex.hxx"
 #include "util/Alloc.hxx"
@@ -81,11 +82,8 @@ get_subsong(Path path_fs, unsigned& index, bool& downmix) {
 }
 
 static bool
-update_ifo(Path path_fs) {
-	if (path_fs.IsNull()) {
-		return false;
-	}
-	auto curr_path = path_fs.GetDirectoryName();
+container_update(Path path_fs) {
+	auto curr_path = AllocatedPath(path_fs);
 	if (dvda_path == curr_path) {
 		return true;
 	}
@@ -99,7 +97,7 @@ update_ifo(Path path_fs) {
 	}
 	dvda_metabase.reset();
 	dvda_path.SetNull();
-	if (!curr_path.IsNull()) {
+	if (FileExists(curr_path)) {
 		if (param_use_stdio) {
 			dvda_media = std::make_unique<dvda_media_file_t>();
 		}
@@ -180,14 +178,14 @@ init(const ConfigBlock& block) {
 
 static void
 finish() noexcept {
-	update_ifo(nullptr);
+	container_update(nullptr);
 	my_av_log_set_default_callback();
 }
 
 static std::forward_list<DetachedSong>
 container_scan(Path path_fs) {
 	std::forward_list<DetachedSong> list;
-	if (!update_ifo(path_fs)) {
+	if (!container_update(path_fs)) {
 		return list;
 	}
 	TagBuilder tag_builder;
@@ -252,7 +250,7 @@ container_scan(Path path_fs) {
 
 static void
 file_decode(DecoderClient &client, Path path_fs) {
-	if (!update_ifo(path_fs)) {
+	if (!container_update(path_fs.GetDirectoryName())) {
 		return;
 	}
 	unsigned track;
@@ -310,7 +308,7 @@ file_decode(DecoderClient &client, Path path_fs) {
 
 static bool
 scan_file(Path path_fs, TagHandler& handler) noexcept {
-	if (!update_ifo(path_fs)) {
+	if (!container_update(path_fs.GetDirectoryName())) {
 		return false;
 	}
 	unsigned track_index;

@@ -32,6 +32,7 @@
 #include "song/DetachedSong.hxx"
 #include "fs/Path.hxx"
 #include "fs/AllocatedPath.hxx"
+#include "fs/FileSystem.hxx"
 #include "thread/Cond.hxx"
 #include "thread/Mutex.hxx"
 #include "util/Alloc.hxx"
@@ -79,11 +80,11 @@ get_subsong(Path path_fs) {
 }
 
 static bool
-update_toc(Path path_fs) {
-	if (path_fs.IsNull()) {
-		return false;
-	}
+container_update(Path path_fs) {
 	auto curr_path = AllocatedPath(path_fs);
+	if (!FileExists(curr_path)) {
+		curr_path = path_fs.GetDirectoryName();
+	}
 	if (dsdiff_path == curr_path) {
 		return true;
 	}
@@ -96,7 +97,7 @@ update_toc(Path path_fs) {
 		sacd_media.reset();
 	}
 	dsdiff_path.SetNull();
-	if (!curr_path.IsNull()) {
+	if (FileExists(curr_path)) {
 		if (param_use_stdio) {
 			sacd_media = std::make_unique<sacd_media_file_t>();
 		}
@@ -161,7 +162,7 @@ init(const ConfigBlock& block) {
 
 static void
 finish() noexcept {
-	update_toc(nullptr);
+	container_update(nullptr);
 }
 
 static std::forward_list<DetachedSong>
@@ -173,7 +174,7 @@ container_scan(Path path_fs) {
 		}
 		return list;
 	}
-	if (!update_toc(path_fs)) {
+	if (!container_update(path_fs)) {
 		return list;
 	}
 	TagBuilder tag_builder;
@@ -220,7 +221,7 @@ bit_reverse_buffer(uint8_t* p, uint8_t* end) {
 
 static void
 file_decode(DecoderClient &client, Path path_fs) {
-	if (!update_toc(path_fs)) {
+	if (!container_update(FileExists(path_fs) ? AllocatedPath(path_fs) : path_fs.GetDirectoryName())) {
 		return;
 	}
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
@@ -350,7 +351,7 @@ file_decode(DecoderClient &client, Path path_fs) {
 
 static bool
 scan_file(Path path_fs, TagHandler& handler) noexcept {
-	if (!update_toc(path_fs)) {
+	if (!container_update(FileExists(path_fs) ? AllocatedPath(path_fs) : path_fs.GetDirectoryName())) {
 		return false;
 	}
 	auto twoch_count = sacd_reader->get_tracks(AREA_TWOCH);
