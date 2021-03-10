@@ -36,7 +36,7 @@ sacd_dsdiff_t::sacd_dsdiff_t() {
 }
 
 sacd_dsdiff_t::~sacd_dsdiff_t() {
-	close();
+	sacd_dsdiff_t::close();
 }
 
 uint32_t sacd_dsdiff_t::get_tracks() {

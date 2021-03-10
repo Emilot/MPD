@@ -46,7 +46,7 @@ public:
 };
 
 class dvda_media_file_t : public dvda_media_t {
-        std::string fname;
+	std::string fname;
 	int fd;
 public:
 	dvda_media_file_t();

@@ -28,7 +28,7 @@ sacd_media_file_t::sacd_media_file_t() {
 }
 
 sacd_media_file_t::~sacd_media_file_t() {
-	close();
+	sacd_media_file_t::close();
 }
 
 bool sacd_media_file_t::open(const char* path) {
@@ -96,7 +96,7 @@ sacd_media_stream_t::sacd_media_stream_t() {
 }
 
 sacd_media_stream_t::~sacd_media_stream_t() {
-	close();
+	sacd_media_stream_t::close();
 }
 
 bool sacd_media_stream_t::open(const char* path) {

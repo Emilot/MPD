@@ -107,6 +107,7 @@ sacd_disc_t::sacd_disc_t() {
 }
 
 sacd_disc_t::~sacd_disc_t() {
+	sacd_disc_t::close();
 }
 
 scarletbook_handle_t* sacd_disc_t::get_handle() {

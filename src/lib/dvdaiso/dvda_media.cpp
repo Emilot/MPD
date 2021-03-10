@@ -28,7 +28,7 @@ dvda_media_file_t::dvda_media_file_t() {
 }
 
 dvda_media_file_t::~dvda_media_file_t() {
-	close();
+	dvda_media_file_t::close();
 }
 
 const char* dvda_media_file_t::get_name() {
@@ -103,7 +103,7 @@ dvda_media_stream_t::dvda_media_stream_t() {
 }
 
 dvda_media_stream_t::~dvda_media_stream_t() {
-	close();
+	dvda_media_stream_t::close();
 }
 
 const char* dvda_media_stream_t::get_name() {
