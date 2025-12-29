@@ -149,6 +149,7 @@ option('vgmstream', type: 'feature', description: 'vgmstream decoder plugin')
 option('vorbis', type: 'feature', description: 'Vorbis decoder plugin')
 option('wavpack', type: 'feature', description: 'WavPack decoder plugin')
 option('wildmidi', type: 'feature', description: 'WildMidi decoder plugin')
+option('sacdiso', type: 'boolean', value: false, description: 'SACD ISO decoder plugin')
 
 #
 # Encoder plugins

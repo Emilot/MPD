@@ -34,6 +34,7 @@
 #include "plugins/MpcdecDecoderPlugin.hxx"
 #include "plugins/FluidsynthDecoderPlugin.hxx"
 #include "plugins/SidplayDecoderPlugin.hxx"
+#include "plugins/SacdIsoDecoderPlugin.hxx"
 #include "Log.hxx"
 #include "PluginUnavailable.hxx"
 
@@ -62,6 +63,9 @@ constinit const struct DecoderPlugin *const decoder_plugins[] = {
 #ifdef ENABLE_DSD
 	&dsdiff_decoder_plugin,
 	&dsf_decoder_plugin,
+#endif
+#ifdef ENABLE_SACDISO
+	&sacdiso_decoder_plugin,
 #endif
 #ifdef ENABLE_FAAD
 	&faad_decoder_plugin,

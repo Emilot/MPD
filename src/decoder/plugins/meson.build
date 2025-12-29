@@ -170,6 +170,13 @@ if libsidplay_dep.found()
   decoder_plugins_sources += 'SidplayDecoderPlugin.cxx'
 endif
 
+enable_sacdiso = get_option('sacdiso')
+decoder_features.set('ENABLE_SACDISO', enable_sacdiso)
+if enable_sacdiso
+  decoder_plugins_sources += 'SacdIsoDecoderPlugin.cxx'
+  decoder_plugins_dependencies += sacdiso_dep
+endif
+
 decoder_plugins = static_library(
   'decoder_plugins',
   decoder_plugins_sources,

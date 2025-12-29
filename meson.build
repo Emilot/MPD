@@ -510,6 +510,8 @@ subdir('src/lib/sqlite')
 subdir('src/lib/systemd')
 subdir('src/lib/upnp')
 
+subdir('src/lib/sacdiso')
+
 subdir('src/lib/crypto')
 
 subdir('src/zeroconf')
