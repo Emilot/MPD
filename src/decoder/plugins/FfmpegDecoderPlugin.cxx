@@ -99,15 +99,100 @@ IsAudio(const AVStream &stream) noexcept
 	return stream.codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
 }
 
+/**
+ * Check if codec is a PCM format (uncompressed audio).
+ */
+[[gnu::pure]]
+static bool
+IsPcmCodec(AVCodecID codec_id) noexcept
+{
+	switch (codec_id) {
+	case AV_CODEC_ID_PCM_S16LE:
+	case AV_CODEC_ID_PCM_S16BE:
+	case AV_CODEC_ID_PCM_S24LE:
+	case AV_CODEC_ID_PCM_S24BE:
+	case AV_CODEC_ID_PCM_S32LE:
+	case AV_CODEC_ID_PCM_S32BE:
+	case AV_CODEC_ID_PCM_F32LE:
+	case AV_CODEC_ID_PCM_F32BE:
+	case AV_CODEC_ID_PCM_F64LE:
+	case AV_CODEC_ID_PCM_F64BE:
+	case AV_CODEC_ID_PCM_BLURAY:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/**
+ * Get the number of channels for an audio stream.
+ */
+[[gnu::pure]]
+static unsigned
+GetChannelCount(const AVStream &stream) noexcept
+{
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 25, 100)
+	return stream.codecpar->ch_layout.nb_channels;
+#else
+	return stream.codecpar->channels;
+#endif
+}
+
+/**
+ * Find the best audio stream for stereo DACs.
+ * Priority:
+ *   1. 2-channel PCM stream (ideal for Blu-ray audio)
+ *   2. Any 2-channel stream
+ *   3. First audio stream (fallback)
+ */
 [[gnu::pure]]
 static int
 ffmpeg_find_audio_stream(const AVFormatContext &format_context) noexcept
 {
-	for (unsigned i = 0; i < format_context.nb_streams; ++i)
-		if (IsAudio(*format_context.streams[i]))
-			return i;
+	int first_audio = -1;
+	int first_stereo = -1;
+	int stereo_pcm = -1;
 
-	return -1;
+	for (unsigned i = 0; i < format_context.nb_streams; ++i) {
+		const AVStream &stream = *format_context.streams[i];
+		if (!IsAudio(stream))
+			continue;
+
+		/* Remember first audio stream as fallback */
+		if (first_audio < 0)
+			first_audio = i;
+
+		const unsigned channels = GetChannelCount(stream);
+		if (channels == 2) {
+			/* Found a stereo stream */
+			if (first_stereo < 0)
+				first_stereo = i;
+
+			/* Check if it's PCM - highest priority */
+			if (stereo_pcm < 0 && IsPcmCodec(stream.codecpar->codec_id)) {
+				stereo_pcm = i;
+				FmtDebug(ffmpeg_domain,
+					 "Selected stereo PCM stream {} for playback",
+					 i);
+			}
+		}
+	}
+
+	/* Return in priority order */
+	if (stereo_pcm >= 0)
+		return stereo_pcm;
+	if (first_stereo >= 0) {
+		FmtDebug(ffmpeg_domain,
+			 "No stereo PCM found, using stereo stream {}",
+			 first_stereo);
+		return first_stereo;
+	}
+	if (first_audio >= 0) {
+		FmtDebug(ffmpeg_domain,
+			 "No stereo stream found, using first audio stream {}",
+			 first_audio);
+	}
+	return first_audio;
 }
 
 [[gnu::pure]]
@@ -543,10 +628,9 @@ FfmpegDecode(DecoderClient &client, InputStream *input,
 			/* AVSEEK_FLAG_BACKWARD asks FFmpeg to seek to
 			   the packet boundary before the seek time
 			   stamp, not after */
-			if (int error = av_seek_frame(&format_context, audio_stream, where,
-						      AVSEEK_FLAG_ANY|AVSEEK_FLAG_BACKWARD);
-			    error < 0)
-				client.SeekError(std::make_exception_ptr(MakeFfmpegError(error, "av_seek_frame() failed")));
+			if (av_seek_frame(&format_context, audio_stream, where,
+					  AVSEEK_FLAG_ANY|AVSEEK_FLAG_BACKWARD) < 0)
+				client.SeekError();
 			else {
 				codec_context.FlushBuffers();
 				min_frame = client.GetSeekFrame();
@@ -695,21 +779,9 @@ ffmpeg_protocols() noexcept
 	return protocols;
 }
 
-/* The list of supported suffixes is computed at most once because
-   it is assumed to remain unchanged during the execution. The suffixes
-   are saved in this set. An empty set encodes that the suffixes
-   have not been computed yet.
-   So in the rare cornercase where ffmpeg supports nothing, the caching
-   does not help (but also does not harm).
-*/
-static std::set<std::string, std::less<>> ffmpeg_suffixes_cache = {};
-
 static std::set<std::string, std::less<>>
 ffmpeg_suffixes() noexcept
 {
-	if (!ffmpeg_suffixes_cache.empty()) {
-		return ffmpeg_suffixes_cache;
-	}
 	std::set<std::string, std::less<>> suffixes;
 
 	void *demuxer_opaque = nullptr;
@@ -718,30 +790,25 @@ ffmpeg_suffixes() noexcept
 			for (const auto i : IterableSplitString(input_format->extensions, ','))
 				suffixes.emplace(i);
 		} else {
-			if (StringIsEqual(input_format->name, "aiff"))
-				/* the "aiff" demuxer has no extension
-				   list, but we should treat "*.aif"
-				   just like "*.aiff" */
-				suffixes.emplace("aif"sv);
-
 			suffixes.emplace(input_format->name);
+			/* mpegts demuxer doesn't expose extensions, add them manually */
+			if (StringIsEqual(input_format->name, "mpegts")) {
+				suffixes.emplace("ts"sv);
+				suffixes.emplace("m2ts"sv);
+				suffixes.emplace("m2t"sv);
+				suffixes.emplace("mts"sv);
+			}
 		}
 	}
 
 	void *codec_opaque = nullptr;
 	while (const auto codec = av_codec_iterate(&codec_opaque)) {
-		if (codec->type != AVMEDIA_TYPE_AUDIO)
-			continue;
-
 		if (StringStartsWith(codec->name, "dsd_"sv)) {
 			/* FFmpeg was compiled with DSD support */
 			suffixes.emplace("dff"sv);
 			suffixes.emplace("dsf"sv);
 		} else if (StringIsEqual(codec->name, "dst")) {
 			suffixes.emplace("dst"sv);
-		} else if (StringIsEqual(codec->name, "opus") ||
-			   StringIsEqual(codec->name, "libopus")) {
-			suffixes.emplace("opus"sv);
 		} else if (StringStartsWith(codec->name, "wma"sv)) {
 			/* there are codecs "wmav1", "wmav2" etc. and
 			   they usually come in "*.wma" files */
@@ -749,7 +816,6 @@ ffmpeg_suffixes() noexcept
 		}
 	}
 
-	ffmpeg_suffixes_cache = suffixes;
 	return suffixes;
 }
 
