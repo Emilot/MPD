@@ -58,6 +58,7 @@ UpdateWalk::UpdateContainerFile(Directory &directory,
 
 			// shouldn't be necessary but it's there..
 			song->mtime = info.mtime;
+			song->added = std::chrono::system_clock::now();
 
 			FmtNotice(update_domain, "added {}/{}",
 				  contdir->GetPath(),
