@@ -9,7 +9,7 @@ SACD ISO files are a common distribution format for high-resolution DSD audio ri
 ## Features
 
 - **Native DSD output**: 2.8224 MHz (DSD64) to compatible DACs
-- **Dual area support**: Both 2-channel stereo and multichannel surround
+- **2CH area support**: 2-channel stereo
 - **DST decoding**: Integrated libdstdec based on ISO/IEC 14496-3 reference implementation
 - **Container scanning**: ISO appears as virtual directory with individual tracks
 - **Full metadata**: Album title, artist, track names extracted from disc TOC
@@ -40,7 +40,7 @@ decoder {
 
 ## Testing
 
-Tested with various SACD ISO files including DST-encoded and raw DSD content, stereo and multichannel areas.
+Tested with various SACD ISO files including DST-encoded and raw DSD content, stereo.
 
 # Music Player Daemon
 
