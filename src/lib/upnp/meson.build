@@ -1,5 +1,4 @@
 upnp_option = get_option('upnp')
-
 if upnp_option == 'auto'
   if not curl_dep.found()
     warning('No UPnP because CURL is not enabled')
@@ -9,26 +8,27 @@ if upnp_option == 'auto'
     upnp_option = 'disabled'
   endif
 endif
-
 if upnp_option == 'auto'
   upnp_dep = dependency('libupnp', version: '>= 1.8', required: false)
-
-  if upnp_dep.found() and upnp_dep.version().version_compare('>= 1.14.26')
+  if upnp_dep.found() and (
+    ( upnp_dep.version().version_compare('>= 1.14.26') and upnp_dep.version().version_compare('< 1.14.30') )
+    or upnp_dep.version().version_compare('>= 1.18.0')
+  )
     warning('Your libupnp version is known to be broken, see https://github.com/pupnp/pupnp/issues/528 - disabling')
     upnp_dep = dependency('', required: false)
   endif
-
   conf.set('USING_PUPNP', upnp_dep.found())
   if not upnp_dep.found()
     upnp_dep = dependency('libnpupnp', version: '>= 1.8', required: false)
   endif
 elif upnp_option == 'pupnp'
   upnp_dep = dependency('libupnp', version: '>= 1.8', required: true)
-
-  if upnp_dep.found() and upnp_dep.version().version_compare('>= 1.14.26')
+  if upnp_dep.found() and (
+    ( upnp_dep.version().version_compare('>= 1.14.26') and upnp_dep.version().version_compare('< 1.14.30') )
+    or upnp_dep.version().version_compare('>= 1.18.0')
+  )
     error('Your libupnp version is known to be broken, see https://github.com/pupnp/pupnp/issues/528')
   endif
-
   conf.set('USING_PUPNP', true)
 elif upnp_option == 'npupnp'
   upnp_dep = dependency('libnpupnp', required: true)
@@ -37,20 +37,16 @@ elif upnp_option == 'disabled'
   upnp_dep = dependency('', required: false)
   subdir_done()
 endif
-
 conf.set('ENABLE_UPNP', upnp_dep.found())
 if not upnp_dep.found()
   subdir_done()
 endif
-
 if not curl_dep.found()
   error('UPnP requires CURL')
 endif
-
 if not expat_dep.found()
   error('UPnP requires expat')
 endif
-
 upnp = static_library(
   'upnp',
   'Init.cxx',
@@ -68,7 +64,6 @@ upnp = static_library(
     expat_dep,
   ],
 )
-
 upnp_dep = declare_dependency(
   link_with: upnp,
   dependencies: [

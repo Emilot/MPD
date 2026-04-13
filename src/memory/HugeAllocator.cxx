@@ -19,7 +19,6 @@ std::span<std::byte>
 HugeAllocate(size_t size)
 {
 	size = AlignToPageSize(size);
-
 	const std::span<std::byte> p{AllocatePages(size), size};
 	EnableHugePages(p);
 	return p;
@@ -34,7 +33,7 @@ HugeFree(std::span<std::byte> p) noexcept
 void
 HugeSetName(std::span<std::byte> p, const char *name) noexcept
 {
-	SetVmaName(p.data(), p.size(), name);
+	SetVmaName(p, name);
 }
 
 void
@@ -67,7 +66,6 @@ HugeAllocate(size_t size)
 			       PAGE_READWRITE);
 	if (p == nullptr)
 		throw std::bad_alloc();
-
 	// TODO: round size up to the page size
 	return {(std::byte *)p, size};
 }

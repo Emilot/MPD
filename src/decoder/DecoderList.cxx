@@ -92,9 +92,6 @@ constinit const struct DecoderPlugin *const decoder_plugins[] = {
 #ifdef ENABLE_PSGPLAY
 	&psgplay_decoder_plugin,
 #endif
-#ifdef ENABLE_SACDISO
-	&sacdiso_decoder_plugin,
-#endif
 #ifdef ENABLE_WILDMIDI
 	&wildmidi_decoder_plugin,
 #endif

@@ -2,7 +2,6 @@ import re
 from os.path import abspath
 
 from build.project import Project
-from build.zlib import ZlibProject
 from build.cmake import CmakeProject
 from build.autotools import AutotoolsProject
 from build.ffmpeg import FfmpegProject
@@ -18,11 +17,16 @@ libsamplerate = CmakeProject(
     ],
 )
 
-zlib = ZlibProject(
-    ('http://zlib.net/zlib-1.3.1.tar.xz',
-     'https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.xz'),
-    '38ef96b8dfe510d42707d9c781877914792541133e1870841463bfa73f883e32',
-    'lib/libz.a',
+zlib = CmakeProject(
+    ('http://zlib.net/zlib-1.3.2.tar.xz',
+     'https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.xz'),
+    'd7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3',
+    'include/zlib.h',
+    [
+        '-DZLIB_BUILD_TESTING=OFF',
+        '-DZLIB_BUILD_SHARED=OFF',
+    ],
+    patches='src/lib/zlib/patches',
 )
 
 libmodplug = AutotoolsProject(
@@ -79,8 +83,8 @@ gme = CmakeProject(
 )
 
 ffmpeg = FfmpegProject(
-    'http://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz',
-    '05ee0b03119b45c0bdb4df654b96802e909e0a752f72e4fe3794f487229e5a41',
+    'http://ffmpeg.org/releases/ffmpeg-8.1.tar.xz',
+    'b072aed6871998cce9b36e7774033105ca29e33632be5b6347f3206898e0756a',
     'lib/libavcodec.a',
     [
         '--disable-shared', '--enable-static',
@@ -511,7 +515,6 @@ ffmpeg = FfmpegProject(
         '--disable-decoder=vp9_qsv',
         '--disable-decoder=vp9_rkmpp',
         '--disable-decoder=vp9_v4l2m2m',
-        '--disable-decoder=vp9_vucid',
         '--disable-decoder=vplayer',
         '--disable-decoder=vqa',
         '--disable-decoder=webvtt',
@@ -551,7 +554,6 @@ ffmpeg = FfmpegProject(
         '--disable-bsf=mjpeg2jpeg',
         '--disable-bsf=opus_metadata',
         '--disable-bsf=pgs_frame_merge',
-        '--disable-bsf=prores',
         '--disable-bsf=text2movsub',
         '--disable-bsf=vp9_metadata',
         '--disable-bsf=vp9_raw_reorder',
