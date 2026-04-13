@@ -34,6 +34,7 @@
 #include "plugins/MpcdecDecoderPlugin.hxx"
 #include "plugins/FluidsynthDecoderPlugin.hxx"
 #include "plugins/SidplayDecoderPlugin.hxx"
+#include "plugins/PsgplayDecoderPlugin.hxx"
 #include "plugins/SacdIsoDecoderPlugin.hxx"
 #include "Log.hxx"
 #include "PluginUnavailable.hxx"

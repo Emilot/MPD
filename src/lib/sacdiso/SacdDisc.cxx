@@ -2,8 +2,10 @@
 // Copyright The Music Player Daemon Project
 
 #include "SacdDisc.hxx"
+#include "Domain.hxx"
 #include "tag/Handler.hxx"
 #include "tag/Type.hxx"
+#include "Log.hxx"
 
 #include <algorithm>
 #include <cstring>

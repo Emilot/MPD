@@ -316,8 +316,6 @@ struct TrackListTime {
 	}
 };
 
- */
-struct AreaText {
 /**
  * Track time/duration (on-disc format, 4 bytes)
  * Used in SACDTRL2 for both start times and durations
@@ -455,6 +453,7 @@ struct TrackIsrcGenre {
  *
  * Layout:
  *   byte 0:     track_type
+ *   byte 1:     track_amount (number of text entries)
  *   bytes 2-13: ISRC/genre info (12 bytes)
  *   bytes 14+:  uint16_t BE offsets[track_amount]
  *               Each offset is relative to the start of THIS record,
