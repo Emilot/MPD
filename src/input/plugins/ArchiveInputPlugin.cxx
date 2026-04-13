@@ -43,6 +43,14 @@ OpenArchiveInputStream(Path path, Mutex &mutex)
 		return nullptr;
 	}
 
-	return archive_file_open(arplug, l.archive)
-		->OpenStream(l.inside.c_str(), mutex);
+	try {
+		return archive_file_open(arplug, l.archive)
+			->OpenStream(l.inside.c_str(), mutex);
+	} catch (...) {
+		FmtDebug(input_domain,
+			 "failed to open {:?} in archive {:?}: {}",
+			 l.inside, l.archive,
+			 std::current_exception());
+		return nullptr;
+	}
 }

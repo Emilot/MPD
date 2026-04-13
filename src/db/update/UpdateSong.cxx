@@ -32,9 +32,16 @@ try {
 		return;
 	}
 
-	if (!(song != nullptr && info.mtime == song->mtime && !walk_discard) &&
-	    UpdateContainerFile(directory, name, suffix, info)) {
-		return;
+	if (!(song != nullptr && info.mtime == song->mtime && !walk_discard)) {
+		if (UpdateContainerFile(directory, name, suffix, info))
+			return;
+
+		/* If UpdateContainerFile() returned false (e.g. sacdiso
+		   determined this is not a valid SACD ISO), try archive
+		   plugins (e.g. iso9660) before falling through to
+		   regular song loading. */
+		if (UpdateArchiveFile(directory, name, suffix, info))
+			return;
 	}
 
 	if (song == nullptr) {

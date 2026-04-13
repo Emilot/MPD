@@ -14,11 +14,12 @@
  * read data from the beginning.  This class automatically shifts the
  * buffer as needed.  It is not thread safe.
  */
-template<class T, size_t size>
+template<class T, std::size_t size>
 class StaticFifoBuffer {
 public:
 	using size_type = std::size_t;
 	using Range = std::span<T>;
+	using ConstRange = std::span<const T>;
 
 protected:
 	size_type head = 0, tail = 0;
@@ -65,7 +66,7 @@ public:
 		else if (tail == size)
 			Shift();
 
-		return Range(data + tail, size - tail);
+		return {data + tail, static_cast<std::size_t>(size - tail)};
 	}
 
 	/**
@@ -114,7 +115,11 @@ public:
 	 * writable, to allow modifications while parsing.
 	 */
 	constexpr Range Read() noexcept {
-		return Range(data + head, tail - head);
+		return {data + head, static_cast<std::size_t>(tail - head)};
+	}
+
+	constexpr ConstRange Read() const noexcept {
+		return {data + head, static_cast<std::size_t>(tail - head)};
 	}
 
 	/**

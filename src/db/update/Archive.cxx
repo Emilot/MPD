@@ -113,7 +113,7 @@ class UpdateArchiveVisitor final : public ArchiveVisitor {
  * @param st stat() information on the archive file
  * @param plugin the archive plugin which fits this archive type
  */
-void
+bool
 UpdateWalk::UpdateArchiveFile(Directory &parent, std::string_view name,
 			      const StorageFileInfo &info,
 			      const ArchivePlugin &plugin) noexcept
@@ -122,14 +122,14 @@ UpdateWalk::UpdateArchiveFile(Directory &parent, std::string_view name,
 	if (path_fs.IsNull())
 		/* not a local file: skip, because the archive API
 		   supports only local files */
-		return;
+		return false;
 
 	Directory *directory =
 		LockMakeVirtualDirectoryIfModified(parent, name, info,
 						   DEVICE_INARCHIVE);
 	if (directory == nullptr)
 		/* not modified */
-		return;
+		return true;
 
 	/* open archive */
 	std::unique_ptr<ArchiveFile> file;
@@ -137,7 +137,11 @@ UpdateWalk::UpdateArchiveFile(Directory &parent, std::string_view name,
 		file = archive_file_open(&plugin, path_fs);
 	} catch (...) {
 		LogError(std::current_exception());
-		return;
+		/* archive open failed; unmark the virtual directory
+		   so it gets purged, and report failure so other
+		   handlers can try this file */
+		directory->mark = false;
+		return false;
 	}
 
 	FmtDebug(update_domain, "archive {} opened", path_fs);
@@ -146,6 +150,7 @@ UpdateWalk::UpdateArchiveFile(Directory &parent, std::string_view name,
 	file->Visit(visitor);
 
 	directory->mark = true;
+	return true;
 }
 
 bool
@@ -157,6 +162,5 @@ UpdateWalk::UpdateArchiveFile(Directory &directory,
 	if (plugin == nullptr)
 		return false;
 
-	UpdateArchiveFile(directory, name, info, *plugin);
-	return true;
+	return UpdateArchiveFile(directory, name, info, *plugin);
 }

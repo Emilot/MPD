@@ -5,7 +5,6 @@
 #pragma once
 
 #include "Chrono.hxx"
-#include "event/Features.h"
 #include "util/IntrusiveTreeSet.hxx"
 
 class FineTimerEvent;
@@ -22,7 +21,7 @@ class TimerList final {
 			 IntrusiveTreeSetOperators<FineTimerEvent, GetDue>> timers;
 
 public:
-	TimerList();
+	TimerList() noexcept;
 	~TimerList() noexcept;
 
 	TimerList(const TimerList &other) = delete;

@@ -170,6 +170,10 @@ if libsidplay_dep.found()
   decoder_plugins_sources += 'SidplayDecoderPlugin.cxx'
 endif
 
+if libpsgplay_dep.found()
+  decoder_plugins_sources += 'PsgplayDecoderPlugin.cxx'
+endif
+
 enable_sacdiso = get_option('sacdiso')
 decoder_features.set('ENABLE_SACDISO', enable_sacdiso)
 if enable_sacdiso
@@ -199,6 +203,7 @@ decoder_plugins = static_library(
     libmpg123_dep,
     libopus_dep,
     libsidplay_dep,
+    libpsgplay_dep,
     libsndfile_dep,
     vorbis_dep,
     ogg_dep,

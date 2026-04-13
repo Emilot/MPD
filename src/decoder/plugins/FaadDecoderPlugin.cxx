@@ -7,7 +7,6 @@
 #include "input/InputStream.hxx"
 #include "pcm/CheckAudioFormat.hxx"
 #include "tag/Handler.hxx"
-#include "util/ScopeExit.hxx"
 #include "util/Domain.hxx"
 #include "util/SpanCast.hxx"
 #include "Log.hxx"
@@ -18,7 +17,7 @@
 
 #include <neaacdec.h>
 
-static const unsigned adts_sample_rates[] =
+static constexpr unsigned adts_sample_rates[] =
     { 96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050,
 	16000, 12000, 11025, 8000, 7350, 0, 0, 0
 };
@@ -26,51 +25,78 @@ static const unsigned adts_sample_rates[] =
 static constexpr Domain faad_decoder_domain("faad_decoder");
 
 /**
- * Check whether the buffer head is an AAC frame, and return the frame
+ * Check whether the buffer head is an ADTS frame, and return the frame
  * length.  Returns 0 if it is not a frame.
+ *
+ * ADTS header layout (ISO/IEC 13818-7):
+ * - Bytes 0-1: Syncword (12 bits, must be 0xFFF) + ID/Layer/Protection/Profile
+ * - Bytes 2-5: Sample rate, channels, frame length, etc.
+ * - Frame length spans bytes 3-5 (13 bits total)
  */
-static size_t
-adts_check_frame(const unsigned char *data)
+static constexpr std::size_t
+AdtsCheckFrame(const uint8_t *data) noexcept
 {
-	/* check syncword */
+	/* check syncword (0xFFF) and validate fixed header bits */
 	if (!((data[0] == 0xFF) && ((data[1] & 0xF6) == 0xF0)))
 		return 0;
 
-	return (((unsigned int)data[3] & 0x3) << 11) |
-		(((unsigned int)data[4]) << 3) |
-		(data[5] >> 5);
+	/* extract 13-bit frame length from bytes 3-5:
+	 * - data[3] & 0x3: bits 12-11 of frame length
+	 * - data[4]: bits 10-3 of frame length
+	 * - data[5] >> 5: bits 2-0 of frame length */
+	return (static_cast<std::size_t>(data[3] & 0x3) << 11) |
+		(static_cast<std::size_t>(data[4]) << 3) |
+		static_cast<std::size_t>(data[5] >> 5);
+}
+
+static constexpr unsigned
+AdtsGetSampleRate(const uint8_t *frame) noexcept
+{
+	assert(AdtsCheckFrame(frame));
+
+	/* extract 4-bit sampling frequency index from byte 2 (bits 5-2) */
+	return adts_sample_rates[(frame[2] & 0x3c) >> 2];
+}
+
+static constexpr uint8_t
+AdtsGetChannels(const uint8_t *frame) noexcept
+{
+	assert(AdtsCheckFrame(frame));
+
+	/* extract 3-bit channel configuration from byte 2 (bits 2-0) */
+	return (frame[2] & 0x1) << 2 | (frame[3] >> 6);
 }
 
 /**
- * Find the next AAC frame in the buffer.  Returns 0 if no frame is
+ * Find the next ADTS frame in the buffer.  Returns 0 if no frame is
  * found or if not enough data is available.
  */
-static size_t
-adts_find_frame(DecoderBuffer &buffer)
+static std::span<const uint8_t>
+AdtsFindFrame(DecoderBuffer &buffer) noexcept
 {
 	while (true) {
-		auto data = FromBytesStrict<const uint8_t>(buffer.Need(8));
-		if (data.data() == nullptr)
+		auto r = FromBytesStrict<const uint8_t>(buffer.Need(8));
+		if (r.data() == nullptr)
 			/* failed */
-			return 0;
+			return {};
 
 		/* find the 0xff marker */
-		auto p = (const uint8_t *)std::memchr(data.data(), 0xff,
-						      data.size());
+		auto p = (const uint8_t *)std::memchr(r.data(), 0xff,
+						      r.size());
 		if (p == nullptr) {
 			/* no marker - discard the buffer */
 			buffer.Clear();
 			continue;
 		}
 
-		if (p > data.data()) {
+		if (p > r.data()) {
 			/* discard data before 0xff */
-			buffer.Consume(p - data.data());
+			buffer.Consume(p - r.data());
 			continue;
 		}
 
 		/* is it a frame? */
-		const size_t frame_length = adts_check_frame(data.data());
+		const size_t frame_length = AdtsCheckFrame(r.data());
 		if (frame_length == 0) {
 			/* it's just some random 0xff byte; discard it
 			   and continue searching */
@@ -78,7 +104,8 @@ adts_find_frame(DecoderBuffer &buffer)
 			continue;
 		}
 
-		if (buffer.Need(frame_length).empty()) {
+		r = FromBytesStrict<const uint8_t>(buffer.Need(frame_length));
+		if (r.empty()) {
 			/* not enough data; discard this frame to
 			   prevent a possible buffer overflow */
 			buffer.Clear();
@@ -86,38 +113,28 @@ adts_find_frame(DecoderBuffer &buffer)
 		}
 
 		/* found a full frame! */
-		return frame_length;
+		return r.first(frame_length);
 	}
 }
 
 static SignedSongTime
-adts_song_duration(DecoderBuffer &buffer)
+AdtsSongDuration(DecoderBuffer &buffer, const unsigned sample_rate) noexcept
 {
+	assert(audio_valid_sample_rate(sample_rate));
+
 	const InputStream &is = buffer.GetStream();
 	const bool estimate = !is.CheapSeeking();
 	if (estimate && !is.KnownSize())
 		return SignedSongTime::Negative();
 
-	unsigned sample_rate = 0;
-
 	/* Read all frames to ensure correct time and bitrate */
 	unsigned frames = 0;
 	for (;; frames++) {
-		const unsigned frame_length = adts_find_frame(buffer);
-		if (frame_length == 0)
+		const auto frame = AdtsFindFrame(buffer);
+		if (frame.empty())
 			break;
 
-		if (frames == 0) {
-			auto data = FromBytesStrict<const uint8_t>(buffer.Read());
-			assert(!data.empty());
-			assert(frame_length <= data.size());
-
-			sample_rate = adts_sample_rates[(data[2] & 0x3c) >> 2];
-			if (sample_rate == 0)
-				break;
-		}
-
-		buffer.Consume(frame_length);
+		buffer.Consume(frame.size());
 
 		if (estimate && frames == 128) {
 			/* if this is a remote file, don't slurp the
@@ -126,30 +143,33 @@ adts_song_duration(DecoderBuffer &buffer)
 			   extrapolate the song duration from what we
 			   have until now */
 
-			const auto offset = is.GetOffset()
-				- buffer.GetAvailable();
-			if (offset <= 0)
-				return SignedSongTime::Negative();
-
+			const auto offset = buffer.GetOffset();
 			const auto file_size = is.GetSize();
 			frames = (frames * file_size) / offset;
 			break;
 		}
 	}
 
-	if (sample_rate == 0)
-		return SignedSongTime::Negative();
-
 	return SignedSongTime::FromScale<uint64_t>(frames * uint64_t(1024),
 						   sample_rate);
 }
 
-static SignedSongTime
-faad_song_duration(DecoderBuffer &buffer, InputStream &is)
+struct FaadSongInfo {
+	unsigned sample_rate = 0;
+	uint8_t channels = 0;
+	SignedSongTime duration = SignedSongTime::Negative();
+
+	bool WasRecognized() const noexcept {
+		return sample_rate > 0;
+	}
+};
+
+static FaadSongInfo
+ScanFaadSong(DecoderBuffer &buffer, InputStream &is) noexcept
 {
 	auto data = FromBytesStrict<const uint8_t>(buffer.Need(5));
 	if (data.data() == nullptr)
-		return SignedSongTime::Negative();
+		return {};
 
 	size_t tagsize = 0;
 	if (data.size() >= 10 && !memcmp(data.data(), "ID3", 3)) {
@@ -161,20 +181,29 @@ faad_song_duration(DecoderBuffer &buffer, InputStream &is)
 		tagsize += 10;
 
 		if (!buffer.Skip(tagsize))
-			return SignedSongTime::Negative();
+			return {};
 
 		data = FromBytesStrict<const uint8_t>(buffer.Need(5));
 		if (data.data() == nullptr)
-			return SignedSongTime::Negative();
+			return {};
 	}
 
-	if (data.size() >= 8 && adts_check_frame(data.data()) > 0) {
+	if (data.size() >= 8 && AdtsCheckFrame(data.data()) > 0) {
 		/* obtain the duration from the ADTS header */
 
-		if (!is.IsSeekable())
-			return SignedSongTime::Negative();
+		FaadSongInfo info{
+			.sample_rate = AdtsGetSampleRate(data.data()),
+			.channels = AdtsGetChannels(data.data()),
+		};
 
-		auto song_length = adts_song_duration(buffer);
+		if (info.sample_rate == 0 ||
+		    !audio_valid_channel_count(info.channels))
+			return {};
+
+		if (!is.IsSeekable())
+			return info;
+
+		info.duration = AdtsSongDuration(buffer, info.sample_rate);
 
 		try {
 			is.LockSeek(tagsize);
@@ -183,163 +212,162 @@ faad_song_duration(DecoderBuffer &buffer, InputStream &is)
 
 		buffer.Clear();
 
-		return song_length;
-	} else if (data.size() >= 5 && memcmp(data.data(), "ADIF", 4) == 0) {
-		/* obtain the duration from the ADIF header */
-
-		if (!is.KnownSize())
-			return SignedSongTime::Negative();
-
-		size_t skip_size = (data[4] & 0x80) ? 9 : 0;
-
-		if (8 + skip_size > data.size())
-			/* not enough data yet; skip parsing this
-			   header */
-			return SignedSongTime::Negative();
-
-		unsigned bit_rate = ((data[4 + skip_size] & 0x0F) << 19) |
-			(data[5 + skip_size] << 11) |
-			(data[6 + skip_size] << 3) |
-			(data[7 + skip_size] & 0xE0);
-
-		const auto size = is.GetSize();
-		if (bit_rate == 0)
-			return SignedSongTime::Negative();
-
-		return SongTime::FromScale(size, bit_rate / 8);
+		return info;
 	} else
-		return SignedSongTime::Negative();
+		return {};
 }
 
-static NeAACDecHandle
-faad_decoder_new()
-{
-	auto decoder = NeAACDecOpen();
+class FaadDecoder {
+	const NeAACDecHandle handle = NeAACDecOpen();
 
-	NeAACDecConfigurationPtr config =
-		NeAACDecGetCurrentConfiguration(decoder);
-	config->outputFormat = FAAD_FMT_16BIT;
-	config->downMatrix = 1;
-	config->dontUpSampleImplicitSBR = 0;
-	NeAACDecSetConfiguration(decoder, config);
-
-	return decoder;
-}
-
-/**
- * Wrapper for NeAACDecInit() which works around some API
- * inconsistencies in libfaad.
- *
- * Throws #std::runtime_error on error.
- */
-static void
-faad_decoder_init(NeAACDecHandle decoder, DecoderBuffer &buffer,
-		  AudioFormat &audio_format)
-{
-	auto data = FromBytesStrict<const uint8_t>(buffer.Read());
-	if (data.empty())
-		throw std::runtime_error("Empty file");
-
-	uint8_t channels;
-	unsigned long sample_rate;
-	long nbytes = NeAACDecInit(decoder,
-				   /* deconst hack, libfaad requires this */
-				   const_cast<unsigned char *>(data.data()),
-				   data.size(),
-				   &sample_rate, &channels);
-	if (nbytes < 0)
-		throw std::runtime_error("Not an AAC stream");
-
-	buffer.Consume(nbytes);
-
-	audio_format = CheckAudioFormat(sample_rate, SampleFormat::S16,
-					channels);
-}
-
-/**
- * Wrapper for NeAACDecDecode() which works around some API
- * inconsistencies in libfaad.
- */
-static const void *
-faad_decoder_decode(NeAACDecHandle decoder, DecoderBuffer &buffer,
-		    NeAACDecFrameInfo *frame_info)
-{
-	auto data = FromBytesStrict<const uint8_t>(buffer.Read());
-	if (data.empty())
-		return nullptr;
-
-	return NeAACDecDecode(decoder, frame_info,
-			      /* deconst hack, libfaad requires this */
-			      const_cast<uint8_t *>(data.data()),
-			      data.size());
-}
-
-/**
- * Determine a song file's total playing time.
- *
- * The first return value specifies whether the file was recognized.
- * The second return value is the duration.
- */
-static std::pair<bool, SignedSongTime>
-faad_get_file_time(InputStream &is)
-{
-	DecoderBuffer buffer(nullptr, is,
-			     FAAD_MIN_STREAMSIZE * MAX_CHANNELS);
-	auto duration = faad_song_duration(buffer, is);
-	bool recognized = !duration.IsNegative();
-
-	if (!recognized) {
-		NeAACDecHandle decoder = faad_decoder_new();
-		AtScopeExit(decoder) { NeAACDecClose(decoder); };
-
-		buffer.Fill();
-
-		AudioFormat audio_format;
-		try {
-			faad_decoder_init(decoder, buffer, audio_format);
-			recognized = true;
-		} catch (...) {
-		}
+public:
+	FaadDecoder() noexcept {
+		NeAACDecConfigurationPtr config =
+			NeAACDecGetCurrentConfiguration(handle);
+		config->outputFormat = FAAD_FMT_FLOAT;
+		config->downMatrix = 1;
+		config->dontUpSampleImplicitSBR = 0;
+		NeAACDecSetConfiguration(handle, config);
 	}
 
-	return {recognized, duration};
-}
+	~FaadDecoder() noexcept {
+		NeAACDecClose(handle);
+	}
+
+	FaadDecoder(const FaadDecoder &) = delete;
+	FaadDecoder &operator=(const FaadDecoder &) = delete;
+
+	/**
+	 * Wrapper for NeAACDecInit().
+	 *
+	 * Throws on error.
+	 */
+	AudioFormat Init(DecoderBuffer &buffer) {
+		auto data = FromBytesStrict<const unsigned char>(buffer.Read());
+		if (data.empty())
+			throw std::runtime_error("Empty file");
+
+		uint8_t channels;
+		unsigned long sample_rate;
+		long nbytes = NeAACDecInit(handle,
+					   /* deconst hack, libfaad requires this */
+					   const_cast<unsigned char *>(data.data()),
+					   data.size(),
+					   &sample_rate, &channels);
+		if (nbytes < 0)
+			throw std::runtime_error("Not an AAC stream");
+
+		buffer.Consume(nbytes);
+
+		return CheckAudioFormat(sample_rate, SampleFormat::FLOAT, channels);
+	}
+
+	void PostSeekReset(long frame) noexcept {
+		NeAACDecPostSeekReset(handle, frame);
+	}
+
+	/**
+	 * Wrapper for NeAACDecDecode()
+	 */
+	const void *Decode(std::span<const unsigned char> frame,
+			   NeAACDecFrameInfo *frame_info) noexcept {
+		return NeAACDecDecode(handle, frame_info,
+				      /* deconst hack, libfaad requires this */
+				      const_cast<unsigned char *>(frame.data()),
+				      frame.size());
+	}
+};
 
 static void
-faad_stream_decode(DecoderClient &client, InputStream &is,
-		   DecoderBuffer &buffer, NeAACDecHandle decoder)
+FaadDecodeStream(DecoderClient &client, InputStream &is)
 {
-	const auto total_time = faad_song_duration(buffer, is);
+	DecoderBuffer buffer(&client, is,
+			     FAAD_MIN_STREAMSIZE * MAX_CHANNELS);
 
-	if (adts_find_frame(buffer) == 0)
+	const auto info = ScanFaadSong(buffer, is);
+	if (!info.WasRecognized())
+	    return;
+
+	const auto total_time = info.duration;
+
+	if (AdtsFindFrame(buffer).empty())
 		return;
+
+	const auto start_offset = buffer.GetOffset();
+
+	FaadDecoder decoder;
 
 	/* initialize it */
 
-	AudioFormat audio_format;
-	faad_decoder_init(decoder, buffer, audio_format);
+	const auto audio_format = decoder.Init(buffer);
 
 	/* initialize the MPD core */
 
-	client.Ready(audio_format, false, total_time);
+	client.Ready(audio_format,
+		     is.IsSeekable() && is.KnownSize() && !total_time.IsNegative(),
+		     total_time);
 
 	/* the decoder loop */
 
-	DecoderCommand cmd;
-	unsigned bit_rate = 0;
+	DecoderCommand cmd =  DecoderCommand::NONE;
+	unsigned kbit_rate = 0;
 	do {
+		/* handle seek command */
+		if (cmd == DecoderCommand::SEEK) {
+			assert(is.IsSeekable());
+			assert(is.KnownSize());
+			assert(!total_time.IsNegative());
+
+			const auto seek_frame = client.GetSeekFrame();
+			cmd = DecoderCommand::NONE;
+
+			const double seek_time = double(seek_frame) / audio_format.sample_rate;
+			const double total_seconds = total_time.ToDoubleS();
+
+			if (seek_time >= total_seconds) {
+				/* seeking past end of song - simply
+				   stop decoding */
+				client.CommandFinished();
+				break;
+			}
+
+			/* interpolate the seek offset (assuming a
+			   constant bit rate) */
+			const auto seek_offset = start_offset + static_cast<offset_type>((is.GetSize() - start_offset) * seek_time / total_seconds);
+
+			try {
+				is.LockSeek(seek_offset);
+				buffer.Clear();
+				decoder.PostSeekReset(seek_frame);
+
+				if (AdtsFindFrame(buffer).empty()) {
+					/* can't find anything here,
+					   and there's no going back -
+					   report the error and stop
+					   decoding */
+					client.SeekError();
+					break;
+				}
+
+				/* seeking was successful */
+				client.CommandFinished();
+			} catch (...) {
+				client.SeekError(std::current_exception());
+			}
+		}
+
 		/* find the next frame */
 
-		const size_t frame_size = adts_find_frame(buffer);
-		if (frame_size == 0)
+		const auto frame = AdtsFindFrame(buffer);
+		if (frame.empty())
 			/* end of file */
 			break;
 
 		/* decode it */
 
 		NeAACDecFrameInfo frame_info;
-		const auto decoded = (const int16_t *)
-			faad_decoder_decode(decoder, buffer, &frame_info);
+		const auto decoded = (const float *)
+			decoder.Decode(frame, &frame_info);
 
 		if (frame_info.error > 0) {
 			FmtWarning(faad_decoder_domain,
@@ -368,7 +396,7 @@ faad_stream_decode(DecoderClient &client, InputStream &is,
 		/* update bit rate and position */
 
 		if (frame_info.samples > 0) {
-			bit_rate = std::lround(frame_info.bytesconsumed * 8.0 *
+			kbit_rate = std::lround(frame_info.bytesconsumed * 8.0 *
 					  frame_info.channels * audio_format.sample_rate /
 					  frame_info.samples / 1000);
 		}
@@ -377,42 +405,44 @@ faad_stream_decode(DecoderClient &client, InputStream &is,
 
 		const std::span audio{decoded, (size_t)frame_info.samples};
 
-		cmd = client.SubmitAudio(is, audio, bit_rate);
+		cmd = client.SubmitAudio(is, audio, kbit_rate);
 	} while (cmd != DecoderCommand::STOP);
 }
 
-static void
-faad_stream_decode(DecoderClient &client, InputStream &is)
+/**
+ * Determine a song file's total playing time.
+ *
+ * The first return value specifies whether the file was recognized.
+ * The second return value is the duration.
+ */
+static auto
+ScanFaadSong(InputStream &is) noexcept
 {
-	DecoderBuffer buffer(&client, is,
+	DecoderBuffer buffer(nullptr, is,
 			     FAAD_MIN_STREAMSIZE * MAX_CHANNELS);
-
-	/* create the libfaad decoder */
-
-	auto decoder = faad_decoder_new();
-	AtScopeExit(decoder) { NeAACDecClose(decoder); };
-
-	faad_stream_decode(client, is, buffer, decoder);
+	return ScanFaadSong(buffer, is);
 }
 
 static bool
-faad_scan_stream(InputStream &is, TagHandler &handler)
+FaadScanStream(InputStream &is, TagHandler &handler)
 {
-	auto result = faad_get_file_time(is);
-	if (!result.first)
+	const auto info = ScanFaadSong(is);
+	if (!info.WasRecognized())
 		return false;
 
-	if (!result.second.IsNegative())
-		handler.OnDuration(SongTime(result.second));
+	handler.OnAudioFormat(AudioFormat{info.sample_rate, SampleFormat::FLOAT, info.channels});
+
+	if (!info.duration.IsNegative())
+		handler.OnDuration(SongTime(info.duration));
 	return true;
 }
 
-static const char *const faad_suffixes[] = { "aac", nullptr };
-static const char *const faad_mime_types[] = {
+static constexpr const char *faad_suffixes[] = { "aac", nullptr };
+static constexpr const char *faad_mime_types[] = {
 	"audio/aac", "audio/aacp", nullptr
 };
 
 constexpr DecoderPlugin faad_decoder_plugin =
-	DecoderPlugin("faad", faad_stream_decode, faad_scan_stream)
+	DecoderPlugin("faad", FaadDecodeStream, FaadScanStream)
 	.WithSuffixes(faad_suffixes)
 	.WithMimeTypes(faad_mime_types);

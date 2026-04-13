@@ -22,6 +22,7 @@
 #include "util/ASCII.hxx"
 #include "util/UriUtil.hxx"
 
+#include <algorithm> // for std::any_of()
 #include <cassert>
 
 #include <stdlib.h>
@@ -554,16 +555,6 @@ SongFilter::HasFoldCase() const noexcept
 
 			return false;
 		});
-}
-
-bool
-SongFilter::HasOtherThanBase() const noexcept
-{
-	return std::any_of(and_filter.GetItems().begin(), and_filter.GetItems().end(),
-			   [=](const auto &item) {
-				   return !dynamic_cast<const BaseSongFilter *>(
-					   item.get());
-			   });
 }
 
 const char *

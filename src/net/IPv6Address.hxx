@@ -59,7 +59,10 @@ class IPv6Address {
 	}
 
 public:
-	IPv6Address() = default;
+	/**
+	 * Leave the object uninitialized.
+	 */
+	constexpr IPv6Address() noexcept = default;
 
 	constexpr IPv6Address(struct in6_addr _address, uint16_t port,
 			      uint32_t scope_id=0) noexcept
@@ -124,12 +127,20 @@ public:
 		return sizeof(address);
 	}
 
+	constexpr int GetFamily() const noexcept {
+		return address.sin6_family;
+	}
+
 	constexpr bool IsDefined() const noexcept {
 		return address.sin6_family != AF_UNSPEC;
 	}
 
 	constexpr bool IsValid() const noexcept {
 		return address.sin6_family == AF_INET6;
+	}
+
+	constexpr void Clear() noexcept {
+		address.sin6_family = AF_UNSPEC;
 	}
 
 	/**
@@ -156,6 +167,20 @@ public:
 
 	constexpr uint32_t GetScopeId() const noexcept {
 		return address.sin6_scope_id;
+	}
+
+	/**
+	 * Return a buffer pointing to the "steady" portion of the
+	 * address, i.e. without volatile parts like the port number.
+	 * This buffer is useful for hashing the address, but not so
+	 * much for anything else.  Returns nullptr if the address is
+	 * not supported.
+	 */
+	constexpr std::span<const std::byte> GetSteadyPart() const noexcept {
+		return {
+			reinterpret_cast<const std::byte *>(&address.sin6_addr),
+			sizeof(address.sin6_addr),
+		};
 	}
 
 	/**

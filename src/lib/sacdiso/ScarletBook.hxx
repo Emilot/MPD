@@ -117,27 +117,6 @@ enum class DataType : uint8_t {
 };
 
 /*
- * Track text types (for SACDTTxt parsing)
- */
-
-enum class TrackTextType : uint8_t {
-	Title = 0x01,
-	Performer = 0x02,
-	Songwriter = 0x03,
-	Composer = 0x04,
-	Arranger = 0x05,
-	Message = 0x06,
-	ExtraMessage = 0x07,
-	TitlePhonetic = 0x81,
-	PerformerPhonetic = 0x82,
-	SongwriterPhonetic = 0x83,
-	ComposerPhonetic = 0x84,
-	ArrangerPhonetic = 0x85,
-	MessagePhonetic = 0x86,
-	ExtraMessagePhonetic = 0x87,
-};
-
-/*
  * On-disc structures (packed, big-endian)
  */
 
@@ -337,24 +316,8 @@ struct TrackListTime {
 	}
 };
 
-/**
- * Area text block header (SACDTTxt)
- * Contains track text positions for all tracks in the area.
- * Layout from scarletbook.h:
- *   offset 0-7: "SACDTTxt" signature
- *   offset 8+: track_text_position[track_count] - uint16_t big-endian offsets
  */
 struct AreaText {
-	std::array<char, 8> id;           // "SACDTTxt"
-	// Followed by: PackedBE16 track_text_position[track_count]
-	// Each position points to track text data within this sector
-
-	[[nodiscard]] bool IsValid() const noexcept {
-		return id[0] == 'S' && id[1] == 'A' && id[2] == 'C' && id[3] == 'D' &&
-		       id[4] == 'T' && id[5] == 'T' && id[6] == 'x' && id[7] == 't';
-	}
-};
-
 /**
  * Track time/duration (on-disc format, 4 bytes)
  * Used in SACDTRL2 for both start times and durations
@@ -457,6 +420,55 @@ struct AudioFrameInfo {
 		else
 			return 2;
 	}
+};
+
+/**
+ * Track text block header ("SACDTTxt")
+ *
+ * Layout:
+ *   offset 0-7:  "SACDTTxt" signature
+ *   offset 8+:   track_text_position[255] - uint16_t BE offsets
+ *                 Each points to a per-track text record within the
+ *                 SACDTTxt data (which may span multiple sectors).
+ */
+struct TrackTextHeader {
+	std::array<char, 8> id;           // "SACDTTxt"
+
+	[[nodiscard]] bool IsValid() const noexcept {
+		return id[0] == 'S' && id[1] == 'A' && id[2] == 'C' && id[3] == 'D' &&
+		       id[4] == 'T' && id[5] == 'T' && id[6] == 'x' && id[7] == 't';
+	}
+};
+
+/**
+ * ISRC/Genre data embedded in each track's text record (12 bytes)
+ */
+struct TrackIsrcGenre {
+	char country_code[2];
+	char owner_code[3];
+	char recording_year[2];
+	char designation_code[5];
+};
+
+/**
+ * Per-track text record (pointed to by TrackTextHeader positions)
+ *
+ * Layout:
+ *   byte 0:     track_type
+ *   bytes 2-13: ISRC/genre info (12 bytes)
+ *   bytes 14+:  uint16_t BE offsets[track_amount]
+ *               Each offset is relative to the start of THIS record,
+ *               pointing to a null-terminated text string.
+ *
+ * Text entry indices:
+ *   0 = title, 1 = performer, 2 = songwriter,
+ *   3 = composer, 4 = arranger, 5 = message
+ */
+struct TrackTextRecord {
+	uint8_t track_type;
+	uint8_t track_amount;
+	TrackIsrcGenre isrc_genre;
+	// Followed by track_amount × PackedBE16 text offsets
 };
 
 #pragma pack(pop)

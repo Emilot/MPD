@@ -4,15 +4,35 @@ ver 0.25 (not yet released)
   - new command "stringnormalization"
   - show detailed seek errors
 * decoder
+  - faad: implement seeking
+  - faad: output 32 bit floating point samples instead of 16 bit integer
   - vgmstream: new plugin
 * output
   - pipewire: add option "reconnect_stream"
 * player
   - support replay gain parameter in stream URI
+  - preallocate physical RAM for audio buffer when playback starts
 * switch to C++23
 * require Meson 1.2
 
-ver 0.24.7 (not yet released)
+ver 0.24.9 (not yet released)
+* database
+  - upnp: refuse to build with libupnp >= 1.14.26 due to API breakage
+
+ver 0.24.8 (2026/01/26)
+* input
+  - cdio_paranoia: fix parsing of absolute device paths (0.24 regression)
+* Linux:
+  - fix build with glibc 2.43
+  - fix build with liburing < 2.4
+
+ver 0.24.7 (2026/01/16)
+* decoder
+  - ffmpeg: allow seeking only if both AVFormatContext and InputStream allow it
+* playlist
+  - cue: strip UTF-8 byte order marker
+* Linux: disable the iowait state for io_uring
+* fix GCC 16 compiler warning
 * fix spurious linker failures
 
 ver 0.24.6 (2025/10/20)

@@ -98,7 +98,7 @@ private:
 			       std::string_view name, std::string_view suffix,
 			       const StorageFileInfo &info) noexcept;
 
-	void UpdateArchiveFile(Directory &directory, std::string_view name,
+	bool UpdateArchiveFile(Directory &directory, std::string_view name,
 			       const StorageFileInfo &info,
 			       const ArchivePlugin &plugin) noexcept;
 

@@ -4,7 +4,7 @@
 #pragma once
 
 #include "BackendEvents.hxx"
-#include "event/Features.h" // for USE_EPOLL
+#include "event/config.h" // for USE_EPOLL
 #include "net/SocketDescriptor.hxx"
 #include "util/BindMethod.hxx"
 #include "util/IntrusiveList.hxx"
@@ -174,6 +174,14 @@ public:
 	 */
 	void ScheduleImplicit() noexcept {
 		Schedule(IMPLICIT_FLAGS);
+	}
+
+	/**
+	 * Schedule #ANY_HANGUP (in addition to events that may
+	 * already be scheduled).
+	 */
+	void ScheduleAnyHangup() noexcept {
+		Schedule(GetScheduledFlags() | ANY_HANGUP);
 	}
 
 #ifdef USE_EPOLL

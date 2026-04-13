@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright The Music Player Daemon Project
 
-#ifndef MPD_DECODER_BUFFER_HXX
-#define MPD_DECODER_BUFFER_HXX
+#pragma once
 
+#include "input/Offset.hxx"
 #include "util/DynamicFifoBuffer.hxx"
 
 class DecoderClient;
@@ -37,6 +37,12 @@ public:
 		return is;
 	}
 
+	/**
+	 * Returns the file offset at the start of the buffer.
+	 */
+	[[gnu::pure]]
+	offset_type GetOffset() const noexcept;
+
 	void Clear() noexcept {
 		buffer.Clear();
 	}
@@ -48,7 +54,7 @@ public:
 	 * data available (yet), end of file, I/O error or a decoder
 	 * command was received
 	 */
-	bool Fill();
+	bool Fill() noexcept;
 
 	/**
 	 * How many bytes are stored in the buffer?
@@ -71,7 +77,8 @@ public:
 	 * Wait until this number of bytes are available.  Returns nullptr on
 	 * error.
 	 */
-	std::span<const std::byte> Need(size_t min_size);
+	[[nodiscard]]
+	std::span<const std::byte> Need(size_t min_size) noexcept;
 
 	/**
 	 * Consume (delete, invalidate) a part of the buffer.  The
@@ -90,7 +97,6 @@ public:
 	 * @param nbytes the number of bytes to skip
 	 * @return true on success, false on error
 	 */
-	bool Skip(size_t nbytes);
+	[[nodiscard]]
+	bool Skip(size_t nbytes) noexcept;
 };
-
-#endif

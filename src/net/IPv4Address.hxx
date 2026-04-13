@@ -86,7 +86,10 @@ class IPv4Address {
 	}
 
 public:
-	IPv4Address() = default;
+	/**
+	 * Leave the object uninitialized.
+	 */
+	constexpr IPv4Address() noexcept = default;
 
 	constexpr IPv4Address(const struct sockaddr_in &_address) noexcept
 		:address(_address) {}
@@ -156,8 +159,16 @@ public:
 		return sizeof(address);
 	}
 
+	constexpr int GetFamily() const noexcept {
+		return address.sin_family;
+	}
+
 	constexpr bool IsDefined() const noexcept {
 		return address.sin_family != AF_UNSPEC;
+	}
+
+	constexpr void Clear() noexcept {
+		address.sin_family = AF_UNSPEC;
 	}
 
 	/**
@@ -197,6 +208,20 @@ public:
 	 */
 	constexpr uint32_t GetNumericAddress() const noexcept {
 		return FromBE32(GetNumericAddressBE());
+	}
+
+	/**
+	 * Return a buffer pointing to the "steady" portion of the
+	 * address, i.e. without volatile parts like the port number.
+	 * This buffer is useful for hashing the address, but not so
+	 * much for anything else.  Returns nullptr if the address is
+	 * not supported.
+	 */
+	constexpr std::span<const std::byte> GetSteadyPart() const noexcept {
+		return {
+			reinterpret_cast<const std::byte *>(&address.sin_addr),
+			sizeof(address.sin_addr),
+		};
 	}
 
 	/**
